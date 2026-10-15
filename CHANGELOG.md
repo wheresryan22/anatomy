@@ -15,6 +15,7 @@ All notable changes to Anatomy are recorded here. The format follows [Keep a Cha
 
 ### Fixed
 
+- `audit.mjs` `markupBox` bounds the bulge of elliptical arcs (`A`/`a`) instead of only their endpoints, and reads arc flags written without separators (`a5 5 0 1010 0`), so fixed parts and `coverage` no longer measure a drawn arc as a straight line.
 - Line-end audits follow cubic and quadratic strokes with a bounded screen-space approximation, so lines attached between curve samples are not reported as loose.
 
 - `drive.mjs` waits for the page to load (up to 10 s) before it runs the first action, and gives up with an error when Chrome leaves a request unanswered for 60 s instead of hanging, as `capture.mjs` now does.

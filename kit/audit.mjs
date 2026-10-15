@@ -1403,6 +1403,42 @@ const attributeOf = (attrs, name) => {
   });
 };
 
+const ARC = new RegExp(`[\\s,]*(${NUMBER.source})[\\s,]*(${NUMBER.source})[\\s,]*(${NUMBER.source})[\\s,]*([01])[\\s,]*([01])[\\s,]*(${NUMBER.source})[\\s,]*(${NUMBER.source})`, "gi");
+
+function arcPoints(from, to, rx, ry, turn, large, sweep) {
+  rx = Math.abs(rx);
+  ry = Math.abs(ry);
+  if (!(rx > 0 && ry > 0) || (from[0] === to[0] && from[1] === to[1])) return [];
+  const phi = (turn * Math.PI) / 180;
+  const [cos, sin] = [Math.cos(phi), Math.sin(phi)];
+  const hx = (from[0] - to[0]) / 2;
+  const hy = (from[1] - to[1]) / 2;
+  const px = cos * hx + sin * hy;
+  const py = -sin * hx + cos * hy;
+  const grow = Math.sqrt((px * px) / (rx * rx) + (py * py) / (ry * ry));
+  if (grow > 1) {
+    rx *= grow;
+    ry *= grow;
+  }
+  const side = (rx * rx * py * py + ry * ry * px * px) || 1;
+  const lift = (large === sweep ? -1 : 1) * Math.sqrt(Math.max(0, (rx * rx * ry * ry - side) / side));
+  const qx = (lift * rx * py) / ry;
+  const qy = (-lift * ry * px) / rx;
+  const cx = cos * qx - sin * qy + (from[0] + to[0]) / 2;
+  const cy = sin * qx + cos * qy + (from[1] + to[1]) / 2;
+  const start = Math.atan2((py - qy) / ry, (px - qx) / rx);
+  let span = Math.atan2((-py - qy) / ry, (-px - qx) / rx) - start;
+  if (!sweep && span > 0) span -= 2 * Math.PI;
+  if (sweep && span < 0) span += 2 * Math.PI;
+  const count = Math.max(2, Math.ceil(Math.abs(span) / (Math.PI / 720)));
+  const out = [];
+  for (let i = 1; i < count; i++) {
+    const t = start + (span * i) / count;
+    out.push([cx + rx * Math.cos(t) * cos - ry * Math.sin(t) * sin, cy + rx * Math.cos(t) * sin + ry * Math.sin(t) * cos]);
+  }
+  return out;
+}
+
 function pointsOfShape(tag, attrs) {
   const get = (name) => attributeOf(attrs, name);
   const num = (name) => Number(get(name) ?? 0);
@@ -1424,7 +1460,14 @@ function pointsOfShape(tag, attrs) {
       };
       if (C === "H") for (const value of v) [x] = take([value + (rel ? x : 0), y]);
       else if (C === "V") for (const value of v) [, y] = take([x, value + (rel ? y : 0)]);
-      else if (C === "A") for (let i = 0; i + 6 < v.length; i += 7) [x, y] = take([v[i + 5] + (rel ? x : 0), v[i + 6] + (rel ? y : 0)]);
+      else if (C === "A") {
+        for (const [, ...arc] of args.matchAll(ARC)) {
+          const [rx, ry, turn, large, sweep, ex, ey] = arc.map(Number);
+          const end = [ex + (rel ? x : 0), ey + (rel ? y : 0)];
+          for (const p of arcPoints([x, y], end, rx, ry, turn, large, sweep)) take(p);
+          [x, y] = take(end);
+        }
+      }
       else if (C === "Z") {
         x = sx;
         y = sy;
