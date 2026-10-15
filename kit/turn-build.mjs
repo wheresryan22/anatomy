@@ -493,7 +493,7 @@ export function turning(P, { recorder = null, scale = 1 } = {}) {
       const svg = k.solidSvg(paths, { tone: options.tone ?? "hi", crease: options.crease ?? "faint", lit: options.lit, inner: seams ? k.lineSvg(seams, { tone: "faint" }) : "" });
       const ribs = options.details?.ribs ? { ...options.details.ribs, r0: options.details.ribs.r0 ?? radiusAt(options.details.ribs.s0), r1: options.details.ribs.r1 ?? radiusAt(options.details.ribs.s1) } : undefined;
       const part = T.fixed({ ...options, svg, anchor: G.pointOf(F, s0, 0, 0), F, details: { ...(options.details ?? {}), ribs, seams: undefined }, shapes: [A.solid(F, profile, { name: options.name })], skipDetails: true });
-      part.round = { F, s0, s1, r0, r1, ends };
+      part.round = { F, s0, s1, r0, r1, ends, details: options.details ?? {} };
       detailParts(part, F, radiusAt, [s0, s1]);
       return part;
     }
@@ -684,17 +684,48 @@ export function turning(P, { recorder = null, scale = 1 } = {}) {
     T.parts.splice(T.parts.indexOf(part), 1);
     T.parts.forEach((p, index) => (p.id = index));
   };
+  const axialDetails = (details = {}, a0, a1, second) => {
+    const keep = (s) => (second ? s > a0 + 1e-6 && s <= a1 + 1e-6 : s >= a0 - 1e-6 && s <= a1 + 1e-6);
+    const out = { ...details };
+    if (details.seams) out.seams = details.seams.filter(keep);
+    if (details.dots) out.dots = details.dots.filter((dot) => keep(dot.at[0]));
+    if (details.bolts) out.bolts = details.bolts.filter((bolt) => keep(bolt.s));
+    if (details.rings) out.rings = details.rings.filter((ring) => keep(ring.at[0]));
+    if (details.rules) out.rules = details.rules.filter((rule) => keep(rule.points.reduce((sum, p) => sum + p[0], 0) / (rule.points.length || 1)));
+    if (details.ribs) {
+      const rs = details.ribs;
+      const rs0 = Math.max(a0, rs.s0);
+      const rs1 = Math.min(a1, rs.s1);
+      if (rs1 - rs0 > 1e-6) {
+        const span = rs.s1 - rs.s0 || 1;
+        const hasR = rs.r0 !== undefined || rs.r1 !== undefined;
+        const rr0 = rs.r0 ?? rs.r;
+        const rr1 = rs.r1 ?? rr0;
+        const rAtS = (s) => rr0 + ((rr1 - rr0) * (s - rs.s0)) / span;
+        const keepStart = Math.abs(rs0 - rs.s0) < 1e-6 && rs.seams && rs.seams !== "last";
+        const keepEnd = Math.abs(rs1 - rs.s1) < 1e-6 && rs.seams && rs.seams !== "first";
+        const seams = keepStart && keepEnd ? true : keepStart ? "first" : keepEnd ? "last" : false;
+        out.ribs = { ...rs, s0: rs0, s1: rs1, ...(hasR ? { r0: rAtS(rs0), r1: rAtS(rs1) } : {}), ...(rs.seams !== undefined ? { seams } : {}) };
+      } else out.ribs = undefined;
+    }
+    return out;
+  };
   T.split = (part, { n, d }) => {
     const N = G.unit3(n);
+    const sourceDetails = part.round ? part.round.details : part.details ?? {};
+    const extraPlanes = part.kind === "prism" ? part.planes : part.planes.slice((sourceDetails.rings?.length ?? 0) + (sourceDetails.rules?.length ?? 0));
+    const worldPlaneOrigin = (pl) => add3(pl.o, part.group ? part.group.origin : [0, 0, 0]);
     if (part.kind === "prism") {
       const { F, ring, s0, s1 } = part.world;
       const along = dot3(N, F.a);
-      const base = { name: part.name, owner: part.owner, group: part.group, layer: part.layer, tone: part.tone, crease: part.crease, lit: part.lit, material: part.material, details: { ...part.details }, bevel: part.spec.bevel };
+      const base = { name: part.name, owner: part.owner, group: part.group, layer: part.layer, tone: part.tone, crease: part.crease, lit: part.lit, material: part.material, bevel: part.spec.bevel };
       let halves;
+      let planeToB;
       if (Math.abs(Math.abs(along) - 1) < 1e-6) {
         const sCut = (d - dot3(N, F.o)) / along;
         if (!(sCut > s0 + 1e-6 && sCut < s1 - 1e-6)) throw new Error(`turning: split plane misses ${part.name}`);
-        halves = [{ s0, s1: sCut }, { s0: sCut, s1 }].map((span) => ({ ...base, F, polygon: ring, s0: span.s0, s1: span.s1 }));
+        halves = [{ s0, s1: sCut }, { s0: sCut, s1 }].map((span, index) => ({ ...base, F, polygon: ring, s0: span.s0, s1: span.s1, details: axialDetails(sourceDetails, span.s0, span.s1, index === 1) }));
+        planeToB = (pl) => dot3(sub3(worldPlaneOrigin(pl), F.o), F.a) > sCut + 1e-6;
       } else if (Math.abs(along) < 1e-6) {
         const nu = dot3(N, F.u);
         const nv = dot3(N, F.v);
@@ -715,12 +746,27 @@ export function turning(P, { recorder = null, scale = 1 } = {}) {
           }
           return out;
         };
-        halves = [clip(1), clip(-1)].map((polygon) => ({ ...base, F, polygon, s0, s1 }));
+        halves = [clip(1), clip(-1)].map((polygon, index) => ({
+          ...base,
+          F,
+          polygon,
+          s0,
+          s1,
+          details: {
+            ...sourceDetails,
+            dots: sourceDetails.dots ? sourceDetails.dots.filter((dot) => (index ? side([dot.at[1], dot.at[2]]) > 1e-6 : side([dot.at[1], dot.at[2]]) <= 1e-6)) : undefined,
+          },
+        }));
         if (halves.some((h) => h.polygon.length < 3)) throw new Error(`turning: split plane misses ${part.name}`);
+        planeToB = (pl) => {
+          const rel = sub3(worldPlaneOrigin(pl), F.o);
+          return side([dot3(rel, F.u), dot3(rel, F.v)]) > 1e-6;
+        };
       } else throw new Error(`turning: a prism can only be split by a plane along or across its axis (${part.name})`);
       part.dead = true;
       if (T.R) T.R.solids.splice(T.R.solids.indexOf(part.shapes[0]), 1);
-      const made = halves.map((h, index) => T.prism({ ...h, name: `${part.name}.${index ? "b" : "a"}`, round: 0, details: index ? { ...h.details, dots: [] } : h.details }));
+      const made = halves.map((h, index) => T.prism({ ...h, name: `${part.name}.${index ? "b" : "a"}`, round: 0 }));
+      for (const pl of extraPlanes) made[planeToB(pl) ? 1 : 0].planes.push({ ...pl });
       for (const half of made) {
         half.spec.cuts = [...(part.spec.cuts ?? []), { n: N, d: d - dot3(N, half.group ? half.group.origin : [0, 0, 0]) }];
         half.hints.unshift(N);
@@ -739,9 +785,10 @@ export function turning(P, { recorder = null, scale = 1 } = {}) {
       if (T.R) T.R.solids.splice(T.R.solids.indexOf(part.shapes[0]), 1);
       const base = { owner: part.owner, group: part.group, layer: part.layer, tone: part.tone, crease: part.crease, lit: part.lit, material: part.material, F, fixed: false };
       const made = [
-        T.round({ ...base, name: `${part.name}.a`, s0, s1: sCut, r: [r0, rAt], ends: [ends[0], "open"], details: part.details }),
-        T.round({ ...base, name: `${part.name}.b`, s0: sCut, s1, r: [rAt, r1], ends: ["open", ends[1]] }),
+        T.round({ ...base, name: `${part.name}.a`, s0, s1: sCut, r: [r0, rAt], ends: [ends[0], "open"], details: axialDetails(sourceDetails, s0, sCut, false) }),
+        T.round({ ...base, name: `${part.name}.b`, s0: sCut, s1, r: [rAt, r1], ends: ["open", ends[1]], details: axialDetails(sourceDetails, sCut, s1, true) }),
       ];
+      for (const pl of extraPlanes) made[dot3(sub3(worldPlaneOrigin(pl), F.o), F.a) > sCut + 1e-6 ? 1 : 0].planes.push({ ...pl });
       for (const half of made) {
         half.spec.cuts = [...(part.spec.cuts ?? []), { n: N, d: d - dot3(N, half.group ? half.group.origin : [0, 0, 0]) }];
         half.hints.unshift(N);
