@@ -562,7 +562,7 @@ export function orbit(T, R, P, options = {}) {
     const share = Math.round((quick ? Math.min(200, random) : random) / families.length);
     let seed = 12345 + families.indexOf(family);
     const rand = () => ((seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648);
-    const events = local.flatMap((c) => [c.x - (family.delta ?? (family.periodic ? 0.001 : family.frame / 50)), c.x + (family.delta ?? (family.periodic ? 0.001 : family.frame / 50))]);
+    const events = local.flatMap((c) => [c.x - (family.delta ?? (family.periodic ? 0.001 : family.frame / 50)), c.x + (family.delta ?? (family.periodic ? 0.001 : family.frame / 50))]).filter((x) => family.periodic || (x >= family.from && x <= family.to));
     say(`order scan ${family.name}: ${share} random states, ${events.length} event states`);
     for (let i = 0; i < share; i++) {
       const x = family.from + rand() * (family.to - family.from);
@@ -887,7 +887,7 @@ function continuity(T, scene, runs, groups, { step, quick, result, say, families
     if (!parts.length) continue;
     const span = sweep.to - sweep.from;
     const delta = g.kind === "slide" ? Math.max(0.01, span / 400) : stepSize;
-    const count = Math.max(1, Math.round(span / delta));
+    const xs = samplesOf({ from: sweep.from, to: sweep.to, periodic: false }, delta).slice(1);
     const reach = parts.map((run) => {
       let r = 0;
       const part = T.parts[run.index];
@@ -900,7 +900,7 @@ function continuity(T, scene, runs, groups, { step, quick, result, say, families
       TURN.emit(run, cams[g.index], f);
       return f;
     };
-    say(`continuity ${g.name}: ${count} steps of ${delta}${sweep.unit} over ${parts.length} parts`);
+    say(`continuity ${g.name}: ${xs.length} steps of ${delta}${sweep.unit} over ${parts.length} parts`);
     const snap = (run, f) => {
       const roles = run.roles;
       const out = { faces: [], sheets: [], dots: [], planes: [], fade: {}, outline: null, levels: f.levels ?? 0 };
@@ -948,19 +948,21 @@ function continuity(T, scene, runs, groups, { step, quick, result, say, families
       return m;
     };
     const frames = parts.map((run) => TURN.frame(run));
-    let previous = parts.map((run, i) => snap(run, emitPart(run, sweep.from, frames[i])));
-    for (let c = 1; c <= count; c++) {
-      const x = sweep.from + c * delta;
+    let prevX = sweep.from;
+    let previous = parts.map((run, i) => snap(run, emitPart(run, prevX, frames[i])));
+    for (const x of xs) {
+      const dx = x - prevX;
       parts.forEach((run, i) => {
         const current = snap(run, emitPart(run, x, frames[i]));
         const reachPx = g.kind === "slide" ? k : (reach[i] * k * Math.PI) / 180;
-        const m = compare(run, previous[i], current, g.kind === "slide" ? delta : delta, reachPx);
+        const m = compare(run, previous[i], current, dx, reachPx);
         for (const key of Object.keys(worst)) worst[key] = Math.max(worst[key], m[key] ?? 0);
         const scale = delta / step;
         if (m.q > Math.ceil(scale) || m.birth > 2 * scale || m.dot > 0.0105 * scale || m.fade > Math.ceil(scale) / 32 + 0.005 || m.merge > 0 || m.motion > 0) failures.push({ part: run.name, group: g.name, at: x, m });
-        measures.push({ run, x: x - delta, dx: delta, value: m.birth + m.motion * 4 + (m.area ?? 0), motion: m.motion, birth: m.birth, valuesAt, reachPx });
+        measures.push({ run, x: prevX, dx, value: m.birth + m.motion * 4 + (m.area ?? 0), motion: m.motion, birth: m.birth, valuesAt, reachPx });
         previous[i] = current;
       });
+      prevX = x;
     }
   }
   measures.sort((a, b) => b.value - a.value);
@@ -1005,13 +1007,15 @@ function continuity(T, scene, runs, groups, { step, quick, result, say, families
     say(`continuity ${family.name}: ${xs.length} frames over ${runs.length} parts`);
     const frames = runs.map((run) => TURN.frame(run));
     let previous = null;
+    let prevX = null;
     for (const x of xs) {
       const cams = TURN.cams(scene, family.at(x));
       const current = runs.map((run, index) => {
         TURN.emit(run, run.group >= 0 ? cams[run.group] : cams.world, frames[index]);
         return areaRoles(run).map((r) => areaOfPath(frames[index].d[r]));
       });
-      if (previous)
+      if (previous) {
+        const dx = x - prevX;
         runs.forEach((run, index) => {
           let most = 0;
           let role = -1;
@@ -1022,9 +1026,11 @@ function continuity(T, scene, runs, groups, { step, quick, result, say, families
               role = k;
             }
           });
-          if (most >= 0.5) clipSteps.push({ family, run, x: x - frameOf(family), dx: frameOf(family), role, value: most });
+          if (most >= 0.5) clipSteps.push({ family, run, x: prevX, dx, role, value: most });
         });
+      }
       previous = current;
+      prevX = x;
     }
   }
   clipSteps.sort((a, b) => b.value - a.value);
