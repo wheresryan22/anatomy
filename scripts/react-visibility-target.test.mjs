@@ -3,13 +3,14 @@ import { execFile } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { delimiter, dirname, join, resolve } from "node:path";
 import test from "node:test";
 import { promisify } from "node:util";
 const require = createRequire(import.meta.url);
 const { build } = require("esbuild");
-const nodePaths = (process.env.NODE_PATH ?? "").split(":").filter(Boolean);
-const alias = Object.fromEntries(["react", "react-dom"].map(name => [name, dirname(require.resolve(name+"/package.json", { paths: nodePaths }))]));
+const nodePaths = (process.env.NODE_PATH ?? "").split(delimiter).filter(Boolean);
+const resolveOptions = nodePaths.length ? { paths: nodePaths } : undefined;
+const alias = Object.fromEntries(["react", "react-dom"].map(name => [name, dirname(require.resolve(name+"/package.json", resolveOptions))]));
 const directory = await mkdtemp(join(tmpdir(), "anatomy-visibility-target-"));
 let observed;
 try {

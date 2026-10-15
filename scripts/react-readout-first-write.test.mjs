@@ -3,13 +3,14 @@ import { execFile } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { delimiter, dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import test from "node:test";
 const require = createRequire(import.meta.url);
 const { build } = require("esbuild");
-const nodePaths = (process.env.NODE_PATH ?? "").split(":").filter(Boolean);
-const alias = Object.fromEntries(["react", "react-dom"].map(name => [name, dirname(require.resolve(name+"/package.json", { paths: nodePaths }))]));
+const nodePaths = (process.env.NODE_PATH ?? "").split(delimiter).filter(Boolean);
+const resolveOptions = nodePaths.length ? { paths: nodePaths } : undefined;
+const alias = Object.fromEntries(["react", "react-dom"].map(name => [name, dirname(require.resolve(name+"/package.json", resolveOptions))]));
 const directory = mkdtempSync(join(tmpdir(), "anatomy-react-readout-"));
 let observed;
 try {

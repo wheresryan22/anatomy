@@ -6,6 +6,11 @@ import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 import * as G from "../kit/lathe.mjs";
 const require = createRequire(import.meta.url);
+const { Module } = require("node:module");
+if (!process.env.NODE_PATH) {
+  process.env.NODE_PATH = resolve("node_modules");
+  Module?._initPaths?.();
+}
 const ts = require("typescript");
 const React = require("react");
 const { renderToStaticMarkup } = require("react-dom/server");

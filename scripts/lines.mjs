@@ -28,4 +28,8 @@ const select = take("--select", null);
 const wait = Number(take("--wait", 1500));
 const actions = JSON.stringify([["wait", wait], ["lines", out, select, { tolerance }]]);
 const child = spawn(process.execPath, [join(dirname(fileURLToPath(import.meta.url)), "drive.mjs"), argv[0], actions, ...argv.slice(1)], { stdio: "inherit" });
+child.on("error", (error) => {
+  console.error(error.message);
+  process.exit(1);
+});
 child.on("exit", (code) => process.exit(code ?? 1));

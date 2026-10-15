@@ -6,11 +6,12 @@ const STILLNESS = "(prefers-reduced-motion: reduce)";
 const MARGIN = "120px 0px";
 const LONGEST_FRAME = 1 / 30;
 
-export const asksForStillness = () => typeof window !== "undefined" && window.matchMedia(STILLNESS).matches;
+export const asksForStillness = () => typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia(STILLNESS).matches;
 
 export function useStillness() {
   return React.useSyncExternalStore(
     (changed) => {
+      if (typeof window === "undefined" || typeof window.matchMedia !== "function") return () => {};
       const query = window.matchMedia(STILLNESS);
       query.addEventListener("change", changed);
       return () => query.removeEventListener("change", changed);
