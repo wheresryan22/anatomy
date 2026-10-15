@@ -1413,6 +1413,8 @@ function pointsOfShape(tag, attrs) {
     let y = 0;
     let sx = 0;
     let sy = 0;
+    let pull = [0, 0];
+    let after = "";
     for (const [, command, args] of d.matchAll(/([MmLlHhVvCcSsQqTtAaZz])([^MmLlHhVvCcSsQqTtAaZz]*)/g)) {
       const v = (args.match(NUMBER) ?? []).map(Number);
       const rel = command === command.toLowerCase();
@@ -1422,6 +1424,7 @@ function pointsOfShape(tag, attrs) {
         out.push(p);
         return p;
       };
+      if (!"CSQT".includes(C)) after = "";
       if (C === "H") for (const value of v) [x] = take([value + (rel ? x : 0), y]);
       else if (C === "V") for (const value of v) [, y] = take([x, value + (rel ? y : 0)]);
       else if (C === "A") for (let i = 0; i + 6 < v.length; i += 7) [x, y] = take([v[i + 5] + (rel ? x : 0), v[i + 6] + (rel ? y : 0)]);
@@ -1431,7 +1434,16 @@ function pointsOfShape(tag, attrs) {
       } else {
         const width = C === "C" ? 6 : C === "S" || C === "Q" ? 4 : 2;
         for (let i = 0; i + 1 < v.length; i += width) {
+          if (C === "S" || C === "T") {
+            const smooth = C === "S" ? after === "C" || after === "S" : after === "Q" || after === "T";
+            const implied = smooth ? [2 * x - pull[0], 2 * y - pull[1]] : [x, y];
+            out.push(implied);
+            if (C === "T") pull = implied;
+          }
           for (let j = 0; j < width; j += 2) out.push(pair(i + j));
+          if (C === "C" || C === "S") pull = pair(i + 2);
+          else if (C === "Q") pull = pair(i);
+          after = C;
           [x, y] = pair(i + width - 2);
           if (C === "M" && i === 0) {
             sx = x;
