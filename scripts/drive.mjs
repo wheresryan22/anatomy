@@ -116,6 +116,17 @@ async function main() {
   if (!Array.isArray(actions)) throw new Error("actions must be an array");
   for (const action of actions) {
     if (!Array.isArray(action) || !kinds.has(action[0])) throw new Error(`unknown action ${Array.isArray(action) ? action[0] : action}`);
+    const [, ...given] = action;
+    const number = (value) => typeof value === "number" && Number.isFinite(value);
+    const optional = (value) => value === undefined || value === null || number(value);
+    if (action[0] === "wait" && !(number(given[0]) && given[0] >= 0)) throw new Error(`wait needs milliseconds of 0 or more, got ${given[0]}`);
+    if (action[0] === "slow" && !(number(given[0]) && given[0] > 0)) throw new Error(`slow needs a factor above 0, got ${given[0]}`);
+    if (action[0] === "move" && !(number(given[1]) && number(given[2]))) throw new Error(`move needs fractions fx and fy, got ${given[1]} and ${given[2]}`);
+    if (action[0] === "click" && !(optional(given[1]) && optional(given[2]))) throw new Error(`click needs numeric fractions fx and fy, got ${given[1]} and ${given[2]}`);
+    if (action[0] === "drag" && !([1, 2, 3, 4].every((at) => number(given[at])) && optional(given[5]))) throw new Error(`drag needs fractions fx0, fy0, fx1, fy1 and a numeric step count, got ${given.slice(1, 6).join(", ")}`);
+    if (action[0] === "key" && !(typeof given[0] === "string" && given[0])) throw new Error(`key needs the name of a key, got ${given[0]}`);
+    if (action[0] === "until" && !(typeof given[0] === "string" && given[0] && (given[1] === undefined || (number(given[1]) && given[1] > 0)))) throw new Error(`until needs a JS expression and a timeout above 0 in ms, got ${given[0]} and ${given[1]}`);
+    if (action[0] === "eval" && typeof given[0] !== "string") throw new Error(`eval needs a JS expression, got ${given[0]}`);
     if (action[0] === "orbit") {
       const [, , from, to, step] = action;
       if (![from, to, step].every(Number.isFinite) || step === 0 || (step > 0 ? from > to : from < to)) throw new Error(`orbit needs numeric from, to and a nonzero step that moves from ${from} toward ${to}, got step ${step}`);

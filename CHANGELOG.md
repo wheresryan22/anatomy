@@ -15,6 +15,7 @@ All notable changes to Anatomy are recorded here. The format follows [Keep a Cha
 
 ### Fixed
 
+- `drive.mjs` checks the arguments of `wait`, `slow`, `move`, `click`, `drag`, `key`, `until` and `eval` actions before it starts Chrome, as it already does for `orbit` and `sheet`. `["wait", "soon"]` used to return at once, `["slow", 0]` stopped the page clock, and `["key"]` died mid-run with `Cannot read properties of undefined (reading 'length')`.
 - Line-end audits follow cubic and quadratic strokes with a bounded screen-space approximation, so lines attached between curve samples are not reported as loose.
 
 - `drive.mjs` waits for the page to load (up to 10 s) before it runs the first action, and gives up with an error when Chrome leaves a request unanswered for 60 s instead of hanging, as `capture.mjs` now does.
