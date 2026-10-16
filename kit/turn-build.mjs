@@ -533,7 +533,7 @@ export function turning(P, { recorder = null, scale = 1 } = {}) {
     part.spec = { c: local(part.group, c), r, flats };
     part.samples = sampleShape(shape, 48).map((p) => local(part.group, p));
     for (const { n } of flats) part.hints.push(n);
-    detailParts(part, G.frameAlong(c, flats.length ? flats[0].n : [0, 0, 1]), null, null);
+    detailParts(part, G.frameAlong(c, flats.length ? flats[0].n : [0, 0, 1]), (s) => Math.sqrt(Math.max(0, r * r - s * s)), [-r, flats.length ? flats[0].d : r]);
     T.parts.push(part);
     return part;
   };
