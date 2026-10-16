@@ -1,5 +1,6 @@
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 
 export const KIT_FILES = (path) => path === "scripts/inline-kit.mjs" || (path.startsWith("kit/") && !path.split("/").some((part) => part.startsWith(".")));
@@ -25,7 +26,13 @@ function walk(root, dir = root, out = []) {
   return out;
 }
 
+function tracked(skillRoot) {
+  const result = spawnSync("git", ["-C", skillRoot, "ls-files", "-z", "--", "kit", "scripts/inline-kit.mjs"], { encoding: "utf8" });
+  const files = result.status === 0 ? result.stdout.split("\0").filter((path) => path && existsSync(join(skillRoot, path))) : [];
+  return files.length ? files : null;
+}
+
 export function fingerprintOfSkill(skillRoot) {
-  const files = [...walk(join(skillRoot, "kit")).map((path) => `kit/${path}`), "scripts/inline-kit.mjs"];
+  const files = tracked(skillRoot) ?? [...walk(join(skillRoot, "kit")).map((path) => `kit/${path}`), "scripts/inline-kit.mjs"];
   return fingerprintOf(files.map((path) => [path, readFileSync(join(skillRoot, path))]));
 }

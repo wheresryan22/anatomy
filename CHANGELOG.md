@@ -15,6 +15,7 @@ All notable changes to Anatomy are recorded here. The format follows [Keep a Cha
 
 ### Fixed
 
+- The kit fingerprint `publish.mjs` writes to `figure.json` covers only the files git tracks when the skill is a git checkout, as the gallery's lookup does. Ignored or untracked files under `kit/` (an `audit.txt`, a `shots/` folder, a `.orig` left by a merge) changed it, and the gallery then found no published version of the skill with that kit.
 - Line-end audits follow cubic and quadratic strokes with a bounded screen-space approximation, so lines attached between curve samples are not reported as loose.
 
 - `drive.mjs` waits for the page to load (up to 10 s) before it runs the first action, and gives up with an error when Chrome leaves a request unanswered for 60 s instead of hanging, as `capture.mjs` now does.
