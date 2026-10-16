@@ -15,6 +15,7 @@ All notable changes to Anatomy are recorded here. The format follows [Keep a Cha
 
 ### Fixed
 
+- `publish.mjs --submit` only takes an open pull request from the branch it pushed (your fork, or the gallery itself when you can push there) as yours. `gh pr list --head` matches the branch name in every fork, so someone else's open `figure/<id>` pull request was reported as yours and no pull request was opened.
 - Line-end audits follow cubic and quadratic strokes with a bounded screen-space approximation, so lines attached between curve samples are not reported as loose.
 
 - `drive.mjs` waits for the page to load (up to 10 s) before it runs the first action, and gives up with an error when Chrome leaves a request unanswered for 60 s instead of hanging, as `capture.mjs` now does.

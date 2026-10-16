@@ -305,7 +305,9 @@ async function submit(options) {
       published = publish({ ...options, force: options.force || !onMain, log: (line) => console.log(`  ${line}`) });
     }
     if (step.pr) {
-      const open = gh(["pr", "list", "--repo", step.pr.repo, "--head", plan.branch, "--state", "open", "--json", "url", "--jq", ".[0].url"]).stdout.trim();
+      const owner = plan.target.split("/")[0].toLowerCase();
+      const listed = gh(["pr", "list", "--repo", step.pr.repo, "--head", plan.branch, "--state", "open", "--json", "url,headRepositoryOwner"]);
+      const open = listed.status === 0 && JSON.parse(listed.stdout).find((pr) => pr.headRepositoryOwner?.login.toLowerCase() === owner)?.url;
       const url = open || run("gh", ["pr", "create", "--repo", step.pr.repo, "--base", "main", "--head", step.pr.head, "--title", step.pr.title, "--body", `${published.figure.prompt}\n\nPublished with Anatomy's publish.mjs.`]);
       console.log(`\nSubmitted: ${url}\nThe checks run there, and a preview of your figure appears on it when they finish.`);
     }
