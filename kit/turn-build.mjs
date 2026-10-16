@@ -78,11 +78,10 @@ function convexOrThrow(ring, name) {
 
 export function roundedPolygon(polygon, radius = 0, steps = 4) {
   const ordered = signedArea(polygon) < 0 ? polygon.slice().reverse() : polygon.slice();
-  if (!(radius > 0)) return ordered.map(([x, y]) => [x, y]);
   const same = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1]) <= 1e-9;
   const poly = ordered.filter((p, i) => i === 0 || !same(p, ordered[i - 1]));
   while (poly.length > 1 && same(poly[0], poly[poly.length - 1])) poly.pop();
-  if (poly.length < 3) return poly.map(([x, y]) => [x, y]);
+  if (!(radius > 0) || poly.length < 3) return poly.map(([x, y]) => [x, y]);
   const n = poly.length;
   const normals = poly.map((a, i) => {
     const b = poly[(i + 1) % n];

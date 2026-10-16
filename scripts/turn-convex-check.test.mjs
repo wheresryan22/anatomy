@@ -26,5 +26,5 @@ test("convex polygons are still accepted, whichever way they wind", () => {
   assert.ok(prism([[0, 0], [10, 0], [10, 10], [0, 10]], { round: 2, steps: 6 }).world.ring.length > 4);
 });
 test("a repeated vertex does not make a convex polygon look concave", () => {
-  assert.equal(prism([[0, 0], [4, 0], [4, 0], [4, 4], [0, 4], [0, 0]]).world.ring.length, 6);
+  assert.equal(prism([[0, 0], [4, 0], [4, 0], [4, 4], [0, 4], [0, 0]]).world.ring.length, 4);
 });
