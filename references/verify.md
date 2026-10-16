@@ -30,7 +30,7 @@ node scripts/drive.mjs page-light.html --actions steps.json --reduced
 node scripts/drive.mjs page.html --actions steps.json --no-webgl
 node scripts/drive.mjs page-light.html --actions steps.json --preload slow.js
 ```
-Options are `--width` (1440), `--height` (1100), `--scale` (1), `--reduced`, `--theme dark|light`, `--no-webgl` (every `getContext("webgl")` or `"webgl2"` returns `null`, to check the SVG fallback), `--preload file.js` (a script that runs before the page's own scripts: counters, stubs, hooks, or `window.__driveSpeed=0.04` to run slowly from the first frame) and `--actions file.json`. Selectors default to the first `.iso-plate`, and fractions run 0..1 across the element.
+Options are `--width` (1440), `--height` (1100), `--scale` (1), `--reduced`, `--theme dark|light`, `--no-webgl` (every `getContext("webgl")` or `"webgl2"` returns `null`, to check the SVG fallback), `--preload file.js` (a script that runs before the page's own scripts: counters, stubs, hooks, or `window.__driveSpeed=0.04` to run slowly from the first frame; repeat it to run several files, in order) and `--actions file.json`. Selectors default to the first `.iso-plate`, and fractions run 0..1 across the element.
 
 `--theme` (in both scripts) only emulates `prefers-color-scheme`. Kit pages choose their theme when they are built (`data-theme` on `<body>`) and ignore that media query, so to check the light theme, build with `--light` and drive the `-light.html` file.
 
@@ -233,7 +233,7 @@ window.requestAnimationFrame = (callback) => raf((now) => {
 });
 ```
 - **Choose what to measure.** Before the transition, set `window.__inkCanvas` (a selector) and `window.__inkBox` (`[x, y, w, h]` in device px of the canvas, measured from its bottom-left; scale CSS px by `canvas.width / canvas.clientWidth`) with an `eval`. Read the rows afterwards with `["eval", "window.__ink.join(' ')"]`.
-- **Do it once per region that matters:** a cavity, the core, an area only the fallback covers. Run it slowed, across first light (`--preload` a second file with `window.__driveSpeed=0.04`), every phase change and the fade-out.
+- **Do it once per region that matters:** a cavity, the core, an area only the fallback covers. Run it slowed, across first light (add a second `--preload` with `window.__driveSpeed=0.04`; each `--preload` runs in the order given), every phase change and the fade-out.
 - **What to look for.** Ink follows the physical quantity monotonically: up as the light comes in, down as it goes. There is no hump at a hand-off and no dip at first light.
 - **What it caught.** The afterburner's cavity peaked at 3600 on the cut before its fix; afterwards it fell monotonically from 1894 to 155. Those rows are in that figure's own units, a sum over its window region rather than this hook's mean. On the ripple tank's light page the hook reads 14.2 at rest and falls as the lamp comes in, because that page's light brightens the paper.
 

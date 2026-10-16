@@ -16,13 +16,13 @@ if (typeof WebSocket === "undefined" && !process.execArgv.includes("--experiment
 function usage() {
   console.log(`Drive a figure in headless Chrome: move, click, type, wait, screenshot, and build contact sheets.
 
-  node drive.mjs <file.html | url> '<actions as JSON>' [--width 1440] [--height 1100] [--scale 1] [--reduced] [--theme dark|light] [--no-webgl] [--preload file.js]
+  node drive.mjs <file.html | url> '<actions as JSON>' [--width 1440] [--height 1100] [--scale 1] [--reduced] [--theme dark|light] [--no-webgl] [--preload file.js]...
   node drive.mjs <file.html | url> --actions steps.json
 
   --reduced     emulate prefers-reduced-motion: reduce
   --theme t     emulate prefers-color-scheme: dark or light (only pages that read the media query follow it)
   --no-webgl    make canvas.getContext("webgl"/"webgl2") return null, to check the SVG fallback
-  --preload js  run a script before the page's own scripts (counters, stubs, hooks)
+  --preload js  run a script before the page's own scripts (counters, stubs, hooks); repeat it to run several, in order
   Kit pages set their theme at build time (body data-theme), so drive the -light.html build for light.
   Put anything with eval strings in an --actions file: inline JSON quoting breaks easily.
 
@@ -96,7 +96,7 @@ async function main() {
     usage();
     process.exit(argv.length ? 0 : 1);
   }
-  const options = { width: 1440, height: 1100, scale: 1, reduced: false, theme: null, actions: null, noWebgl: false, preload: null };
+  const options = { width: 1440, height: 1100, scale: 1, reduced: false, theme: null, actions: null, noWebgl: false, preload: [] };
   const rest = [];
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index];
@@ -106,7 +106,7 @@ async function main() {
     else if (arg === "--reduced") options.reduced = true;
     else if (arg === "--theme") options.theme = argv[++index];
     else if (arg === "--no-webgl") options.noWebgl = true;
-    else if (arg === "--preload") options.preload = readFileSync(argv[++index], "utf8");
+    else if (arg === "--preload") options.preload.push(readFileSync(argv[++index], "utf8"));
     else if (arg === "--actions") options.actions = JSON.parse(readFileSync(argv[++index], "utf8"));
     else rest.push(arg);
   }
@@ -191,7 +191,7 @@ async function main() {
     if (features.length) await send("Emulation.setEmulatedMedia", { features });
     const SLOW = `(()=>{const raf=window.requestAnimationFrame.bind(window);let real=null,virtual=0;window.__driveSpeed=1;window.requestAnimationFrame=(callback)=>raf((now)=>{if(real===null){real=now;virtual=now}virtual+=(now-real)*window.__driveSpeed;real=now;callback(virtual)});const clock=performance.now.bind(performance);let base=null,shown=0;performance.now=()=>{const now=clock();if(base===null){base=now;shown=now}shown+=(now-base)*window.__driveSpeed;base=now;return shown}})();`;
     const NO_GL = `(()=>{const get=HTMLCanvasElement.prototype.getContext;HTMLCanvasElement.prototype.getContext=function(kind,...rest){if(/webgl/.test(String(kind)))return null;return get.call(this,kind,...rest)}})();`;
-    const early = [SLOW, options.noWebgl ? NO_GL : "", options.preload ?? ""].filter(Boolean).join("\n");
+    const early = [SLOW, options.noWebgl ? NO_GL : "", ...options.preload].filter(Boolean).join(";\n");
     await send("Page.addScriptToEvaluateOnNewDocument", { source: early });
     await send("Emulation.setDeviceMetricsOverride", { width: options.width, height: options.height, deviceScaleFactor: options.scale, mobile: options.width < 600 });
     const load = new Promise((done) => {
