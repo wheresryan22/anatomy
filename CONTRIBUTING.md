@@ -62,7 +62,7 @@ node examples/turning-dial/build.mjs --light --verify
 node examples/turning-dial/stress.mjs --light
 ```
 
-The Raptor builds take a few minutes each; the rest take seconds. `examples/test-rig/` and `examples/spot-plate/` are React components with no build script.
+The Raptor builds take a few minutes each; the rest take seconds. `examples/test-rig/` and `examples/spot-plate/` are React components with no committed page; wrap them into a standalone page in `shots/` with `node scripts/react-page.mjs examples/test-rig --light` when you want to run the browser checks on them (with `react`, `react-dom` and `esbuild` on `NODE_PATH` or installed in the project).
 
 After a build, `git status --short` must show nothing unless you meant to change a figure. CI runs exactly these commands and then `git diff --exit-code`.
 

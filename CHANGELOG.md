@@ -6,6 +6,7 @@ All notable changes to Anatomy are recorded here. The format follows [Keep a Cha
 
 ### Added
 
+- `scripts/react-page.mjs`: opt-in wrapper that bundles, server-renders (`renderToString`) and hydrates (`hydrateRoot`) a React/Next.js figure (`figure.tsx` or its folder) into a standalone HTML page (`--light`, `--out`, `--export`, `--css`, `--width`) using `react`, `react-dom` and `esbuild` from the project or `NODE_PATH`, so `capture.mjs`, `drive.mjs` and `lines.mjs` can check TSX figures directly without adding dependencies to the kit. Also inspects props crossing `"use client"` boundaries and warns when an element prop is missing a root `key` or wraps a client component.
 - Antigravity support, alongside Claude Code, OpenCode and Codex. Documented user and project installation paths in the README and CONTRIBUTING, updated SKILL.md compatibility, and added Antigravity to the bug report form.
 - MiniMax Code support. The README and CONTRIBUTING document its user (`~/.minimax/skills`) and project (`.minimax/skills`) folders and `npx skills add ... -a minimax-code`, SKILL.md lists it, and the bug report form offers it.
 

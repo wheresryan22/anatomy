@@ -40,3 +40,16 @@ Any array you build with `.map` needs keys as usual.
 
 ## Hydration
 Render the rest pose on the server and on the client's first render; start motion only in effects. Don't read `window` while rendering. `asksForStillness()` is safe because it is only called inside effects and loops.
+
+## Standalone page for the browser checks
+`scripts/react-page.mjs` wraps a React figure (`figure.tsx` or a folder containing one) into a standalone HTML page so you can run `capture.mjs`, `drive.mjs` and `lines.mjs` without starting a Next.js server. It uses `react`, `react-dom` and `esbuild` from the project's `node_modules` (or `NODE_PATH`), server-renders the resting pose with `renderToString`, hydrates it on the client with `hydrateRoot`, inlines `iso.css` plus any stylesheet imported by the figure, and resolves `@/` and `~/` imports (falling back to `kit/` for `@/components/iso/…` before the kit has been copied in). It also checks every prop crossing a `"use client"` boundary and prints a `key-warning trap:` line if an element prop is missing a root `key` or wraps a client component.
+
+```sh
+node scripts/react-page.mjs examples/test-rig --out shots/test-rig.html
+node scripts/react-page.mjs examples/test-rig --light --out shots/test-rig-light.html
+node scripts/capture.mjs shots/test-rig-light.html --out shots/test-rig-light.png
+node scripts/drive.mjs shots/test-rig-light.html '[["key","ArrowLeft"],["wait",600],["shot","shots/pulled.png"]]'
+node scripts/lines.mjs shots/test-rig-light.html --out shots/test-rig-lines.png
+```
+When `--out` is left off, the page is written to `shots/<name>.html` (`shots/<name>-light.html` with `--light`). Pass `--export Name` if the entry file exports more than one component and has no default export, `--css file.css` to add an external stylesheet, or `--width 760` to change the card column width.
+
