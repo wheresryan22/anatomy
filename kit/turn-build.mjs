@@ -572,6 +572,8 @@ export function turning(P, { recorder = null, scale = 1 } = {}) {
     }
     const caps = [curve.radius(curve.s0) > 1e-6, curve.radius(curve.s1) > 1e-6];
     const shape = A.solid(F, profile.map(([sv, rv]) => [sv, rv, 1]), { name: options.name, radius: curve.radius });
+    const ribs = options.details?.ribs;
+    const details = ribs ? { ...options.details, ribs: { ...ribs, r0: ribs.r0 ?? curve.radius(ribs.s0), r1: ribs.r1 ?? curve.radius(ribs.s1) } } : options.details;
     const vertical = Math.abs(F.a[2]) > 0.9999;
     const groupOk = !options.group || groupOf(options.group).upright;
     if (vertical && groupOk && options.fixed !== false) {
@@ -580,11 +582,11 @@ export function turning(P, { recorder = null, scale = 1 } = {}) {
       meridian[meridian.length - 2] = [meridian[meridian.length - 2][0], meridian[meridian.length - 2][1]];
       const seams = (options.details?.seams ?? []).map((sv) => G.arcOf(F, sv, curve.radius(sv), P, { slope: curve.slope(sv), least: 0 })).join("");
       const svg = k.solidSvg(G.lathe(meridian, F, P, { smooth: { slope: curve.slope, radius: curve.radius } }), { tone: options.tone ?? "hi", crease: options.crease ?? "faint", lit: options.lit, inner: seams ? k.lineSvg(seams, { tone: "faint" }) : "" });
-      const part = T.fixed({ ...options, svg, anchor: G.pointOf(F, curve.s0, 0, 0), F, details: { ...(options.details ?? {}), seams: undefined }, shapes: [shape], skipDetails: true });
+      const part = T.fixed({ ...options, svg, anchor: G.pointOf(F, curve.s0, 0, 0), F, details: { ...(details ?? {}), seams: undefined }, shapes: [shape], skipDetails: true });
       detailParts(part, F, curve.radius, [curve.s0, curve.s1]);
       return part;
     }
-    const part = common(options, "lathe");
+    const part = common({ ...options, details }, "lathe");
     record(part, shape);
     part.spec = { F: { o: local(part.group, F.o), a: F.a, u: F.u, v: F.v }, levels, caps };
     part.world = { F, profile, curve, knots };
