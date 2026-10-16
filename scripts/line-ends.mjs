@@ -224,14 +224,19 @@ function lineEnds({ select = null, tolerance = 1, root: rootSlack = 2, mark = 7,
   };
   const lengthOf = (flat) => flat.reduce((sum, p, i) => (i ? sum + Math.hypot(p[0] - flat[i - 1][0], p[1] - flat[i - 1][1]) : 0), 0);
   const hidden = (el, p) => {
-    const stack = document.elementsFromPoint(p[0], p[1]);
+    const [left, top] = [scrollX, scrollY];
+    if (p[0] < 0 || p[1] < 0 || p[0] >= innerWidth || p[1] >= innerHeight) scrollTo({ left: left + p[0] - innerWidth / 2, top: top + p[1] - innerHeight / 2, behavior: "instant" });
+    const q = [p[0] + left - scrollX, p[1] + top - scrollY];
+    const stack = document.elementsFromPoint(q[0], q[1]);
     const at = stack.indexOf(el);
     const above = at < 0 ? stack : stack.slice(0, at);
-    return above.some((node) => {
+    const covered = above.some((node) => {
       if (!(node instanceof SVGGeometryElement) || node.contains(el)) return false;
       const cs = getComputedStyle(node);
-      return cs.fill !== "none" && Number(cs.fillOpacity) * opacityOf(node) >= cover && node.isPointInFill(new DOMPoint(...inverse(node, p)));
+      return cs.fill !== "none" && Number(cs.fillOpacity) * opacityOf(node) >= cover && node.isPointInFill(new DOMPoint(...inverse(node, q)));
     });
+    scrollTo({ left, top, behavior: "instant" });
+    return covered;
   };
   const inverse = (node, p) => {
     const m = node.getScreenCTM().inverse();
