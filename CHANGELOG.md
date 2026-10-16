@@ -8,6 +8,8 @@ All notable changes to Anatomy are recorded here. The format follows [Keep a Cha
 
 - Antigravity support, alongside Claude Code, OpenCode and Codex. Documented user and project installation paths in the README and CONTRIBUTING, updated SKILL.md compatibility, and added Antigravity to the bug report form.
 - MiniMax Code support. The README and CONTRIBUTING document its user (`~/.minimax/skills`) and project (`.minimax/skills`) folders and `npx skills add ... -a minimax-code`, SKILL.md lists it, and the bug report form offers it.
+- `publish.mjs` accepts `--agent "MiniMax Code"`, alongside Claude Code, OpenCode, Codex, Antigravity and Other.
+- `session.mjs` reads the time and tokens spent from Antigravity session logs (`ANTIGRAVITY_CONVERSATION_ID`, subagents included), alongside Claude Code.
 
 ### Changed
 

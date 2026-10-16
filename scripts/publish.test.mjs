@@ -89,6 +89,27 @@ test("publisher accepts only the gallery's supported licenses", () => {
   }
 });
 
+test("publisher accepts MiniMax Code as an agent and rejects unknown agents", () => {
+  const repo = gallery();
+  const command = (agent, id) => spawnSync(process.execPath, [
+    join(SKILL, "scripts", "publish.mjs"), join(SKILL, "examples", "dial-indicator"),
+    "--into", repo, "--id", id, "--title", "Dial indicator", "--prompt", "/anatomy a dial indicator",
+    "--author", "Octo-Cat", "--agent", agent, "--no-preview", "--no-session",
+  ], { encoding: "utf8" });
+  try {
+    const valid = command("MiniMax Code", "minimax-code-agent");
+    assert.equal(valid.status, 0, valid.stderr);
+    const figure = JSON.parse(readFileSync(join(repo, "figures", "octo-cat", "minimax-code-agent", "figure.json"), "utf8"));
+    assert.equal(figure.agent, "MiniMax Code");
+    const invalid = command("Unknown Agent", "unknown-agent");
+    assert.equal(invalid.status, 1);
+    assert.match(invalid.stderr, /--agent must be one of: Claude Code, OpenCode, Codex, Antigravity, MiniMax Code, Other/);
+    assert.ok(!existsSync(join(repo, "figures", "octo-cat", "unknown-agent")));
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 import { submitPlan } from "./publish.mjs";
 
 test("--submit: people who can push get a branch; everyone else a fork made for them", () => {

@@ -18,11 +18,11 @@ Publish only when the user asks to share or publish a figure. Never send anythin
    ```sh
    node <skill>/scripts/publish.mjs <figure folder> --into <clone> --id <kebab-id> \
      --title "..." --author <github user> --prompt "..." \
-     [--agent "Claude Code"|OpenCode|Codex|Antigravity|Other] --model "..." [--minutes 45] [--tokens 1.2M] \
+     [--agent "Claude Code"|OpenCode|Codex|Antigravity|"MiniMax Code"|Other] --model "..." [--minutes 45] [--tokens 1.2M] \
      [--license MIT|CC-BY-4.0] \
      [--tags a,b] [--audit] [--pages a.html,b.html] --submit --dry-run
    ```
-   Pass `--agent` for the agent you are running in and `--model` for the model you are (the gallery requires it, like `claude-opus-5-5` or `gpt-5-codex`). In Claude Code the time to make and the tokens spent are read from this session's log on their own: from the request that made the figure to the request to publish it, idle gaps over 10 minutes left out, cache reads not counted. In another agent, pass `--minutes` and `--tokens` if you can see your session's usage; otherwise leave them out rather than guess. Read the plan back to the user: it names the fork (if any), the branch, the folder it adds and where the pull request goes.
+   Pass `--agent` for the agent you are running in and `--model` for the model you are (the gallery requires it, like `claude-opus-5-5` or `gpt-5-codex`). In Claude Code and Antigravity the time to make and the tokens spent are read from this session's log on their own: from the request that made the figure to the request to publish it, idle gaps over 10 minutes left out, cache reads not counted. In another agent, pass `--minutes` and `--tokens` if you can see your session's usage; otherwise leave them out rather than guess. Read the plan back to the user: it names the fork (if any), the branch, the folder it adds and where the pull request goes.
 5. **Only after the user says yes,** run the same command with `--yes` instead of `--dry-run`. It copies only the figure's source into `figures/<author>/<id>/src/`, points its kit imports at the clone's `.skill/` link, records the kit fingerprint, checks the build, saves a preview to `shots/<author>-<id>/preview.png`, then commits that folder alone, pushes, and opens the pull request. Give the user the link it prints.
    - If it says a file reaches outside the figure folder and the skill, copy what that file needs into the figure folder, rebuild, and publish again.
    - If it can't tell which pages are the figure, pass `--pages`.

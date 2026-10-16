@@ -9,7 +9,7 @@ const SKILL = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SOURCE_TYPES = [".mjs", ".js", ".css", ".html", ".json", ".md", ".txt", ".svg"];
 const SKIP_DIRS = ["node_modules", "shots", ".git"];
 const ID = /^[a-z0-9]+(-[a-z0-9]+)*$/;
-const AGENTS = ["Claude Code", "OpenCode", "Codex", "Antigravity", "Other"];
+const AGENTS = ["Claude Code", "OpenCode", "Codex", "Antigravity", "MiniMax Code", "Other"];
 const LICENSES = ["MIT", "CC-BY-4.0"];
 const KINDS = ["SVG", "SVG + WebGL", "SVG + 3D", "SVG + WebGL + 3D"];
 
@@ -21,14 +21,14 @@ function usage(message) {
   console.log(`Copy a figure into a local clone of the community gallery, ready for a pull request.
 
   node scripts/publish.mjs <figure folder> --into <anatomy-community clone> --id <kebab-id> --title "..." --prompt "..." --author <github user>
-      [--agent "Claude Code"|OpenCode|Codex|Antigravity|Other] [--model "..."] [--minutes 45] [--tokens 1.2M] [--no-session]
+      [--agent "Claude Code"|OpenCode|Codex|Antigravity|"MiniMax Code"|Other] [--model "..."] [--minutes 45] [--tokens 1.2M] [--no-session]
       [--license MIT|CC-BY-4.0] [--tags a,b]
       [--build build.mjs] [--pages a.html,b.html] [--kind "SVG + WebGL"] [--audit] [--no-preview] [--force]
       [--submit [--yes] [--dry-run] [--upstream owner/repo]]
 
 The figure must be plain HTML: a build script that writes standalone pages next to itself, in any theme.
 Only the source is copied, to figures/<author>/<id>/: the gallery's CI builds the pages and the poster.
-In Claude Code, the time to make and the tokens spent are read from this session's own log (from the request that
+In Claude Code and Antigravity, the time to make and the tokens spent are read from this session's own log (from the request that
 made the figure up to the request to publish it, with idle gaps over 10 minutes left out); --minutes and --tokens
 override them, and --no-session leaves them out. Other agents pass them if they know them.
 Without --submit nothing is pushed: the command prints the git and gh commands to run when you are ready.
@@ -286,7 +286,7 @@ async function submit(options) {
   if (!options.noSession && !(options.minutes && options.tokens)) {
     const measured = fromThisSession({ prompt: options.prompt });
     const shown = { minutes: options.minutes ?? measured?.minutes, tokens: options.tokens ?? measured?.tokens };
-    console.log(shown.minutes && shown.tokens ? `  · record ${describe(shown)} to make it${measured ? " (read from this session)" : ""}` : "  · no time or token count (not run inside Claude Code; pass --minutes and --tokens to add them)");
+    console.log(shown.minutes && shown.tokens ? `  · record ${describe(shown)} to make it${measured ? " (read from this session)" : ""}` : "  · no time or token count (not run inside Claude Code or Antigravity; pass --minutes and --tokens to add them)");
   } else if (options.minutes || options.tokens) console.log(`  · record${options.minutes ? ` ${options.minutes} min` : ""}${options.tokens ? ` ${options.tokens} tokens` : ""}`);
   console.log(`  (in ${repo})`);
   if (options.dryRun) return console.log("\ndry run: nothing was done");

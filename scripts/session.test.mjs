@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -31,11 +31,84 @@ function session() {
 
 test("time and tokens cover the figure's request up to the publish request", () => {
   const { root, id } = session();
-  const result = fromThisSession({ prompt: "/anatomy explain how a token bucket works, interactive", env: { CLAUDE_CODE_SESSION_ID: id }, root });
-  assert.equal(result.tokens, 1100 + 400 + 1030 + 1030 + 1600);
-  assert.equal(result.minutes, 3 + 10);
-  assert.equal(result.from, at(5));
-  assert.equal(result.to, at(80));
+  try {
+    const result = fromThisSession({ prompt: "/anatomy explain how a token bucket works, interactive", env: { CLAUDE_CODE_SESSION_ID: id }, root });
+    assert.equal(result.tokens, 1100 + 400 + 1030 + 1030 + 1600);
+    assert.equal(result.minutes, 3 + 10);
+    assert.equal(result.from, at(5));
+    assert.equal(result.to, at(80));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("Antigravity session logs and spawned subagents are measured with cache reads excluded", () => {
+  const root = mkdtempSync(join(tmpdir(), "ag-session-"));
+  const id = "9d87af63-630e-42ed-8404-af8cbbb7b817";
+  const sub = "392d4fbf-0095-4e51-90c2-ff002d49f757";
+  try {
+    mkdirSync(join(root, "brain", id, ".system_generated", "logs"), { recursive: true });
+    mkdirSync(join(root, "brain", sub, ".system_generated", "logs"), { recursive: true });
+    const agUser = (step, minute, text) => ({
+      step_index: step,
+      source: "USER_EXPLICIT",
+      type: "USER_INPUT",
+      created_at: at(minute),
+      content: `<USER_REQUEST>\n${text}\n</USER_REQUEST>\n<ADDITIONAL_METADATA>\nlocal time\n</ADDITIONAL_METADATA>`,
+    });
+    const agReply = (step, minute, input, output, cache = 999999) => ({
+      step_index: step,
+      source: "MODEL",
+      type: "PLANNER_RESPONSE",
+      created_at: at(minute),
+      input_tokens: input,
+      output_tokens: output,
+      cache_read_tokens: cache,
+    });
+    writeFileSync(join(root, "brain", id, ".system_generated", "logs", "transcript.jsonl"), lines([
+      agUser(0, 0, "check git status"),
+      agReply(1, 1, 50, 50),
+      agUser(2, 5, "/anatomy explain how a token bucket works, interactive"),
+      agReply(3, 6, 1100, 400),
+      {
+        step_index: 4,
+        source: "MODEL",
+        type: "GENERIC",
+        created_at: at(6),
+        content: `Created At: ${at(6)}\nCompleted At: ${at(6)}\nCreated the following subagents:\n{\n  "conversationId": "${sub}"\n}`,
+      },
+      {
+        step_index: 5,
+        source: "MODEL",
+        type: "GENERIC",
+        created_at: at(7),
+        content: `Created At: ${at(7)}\nCompleted At: ${at(7)}\n\nThe command exited with code 0.\nOutput:\nCreated the following subagents:\n{\n  "conversationId": "00000000-0000-0000-0000-000000000000"\n}`,
+      },
+      agReply(6, 8, 1010, 20),
+      agReply(7, 70, 1010, 20),
+      agUser(8, 80, "publish this figure to the community gallery"),
+      agReply(9, 81, 5000, 5000),
+    ]));
+    writeFileSync(join(root, "brain", sub, ".system_generated", "logs", "transcript.jsonl"), lines([
+      agUser(0, 6, "research the token bucket parts"),
+      agReply(1, 7, 1300, 300),
+    ]));
+    const result = fromThisSession({
+      prompt: "/anatomy explain how a token bucket works, interactive",
+      env: { ANTIGRAVITY_CONVERSATION_ID: id, ANTIGRAVITY_APP_DATA_DIR: root },
+    });
+    assert.equal(result.tokens, 1500 + 1030 + 1030 + 1600);
+    assert.equal(result.minutes, 3 + 10);
+    assert.equal(result.from, at(5));
+    assert.equal(result.to, at(80));
+
+    const withoutPrompt = fromThisSession({
+      env: { ANTIGRAVITY_CONVERSATION_ID: id, ANTIGRAVITY_APP_DATA_DIR: root },
+    });
+    assert.deepEqual(withoutPrompt, result);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test("no session, no numbers", () => {
