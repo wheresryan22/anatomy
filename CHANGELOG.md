@@ -15,6 +15,7 @@ All notable changes to Anatomy are recorded here. The format follows [Keep a Cha
 
 ### Fixed
 
+- `turn-check.mjs` (`--order`, `--pops`, `--lines` and `--perf`) works on `painter: "canvas"` (`CANVAS2D.mount`) pages: `HELPERS` snapshots and attaches hidden live `<svg data-live>` layers during DOM checks, calls `window.__isoTurn.set` on every pose so background tours stay paused, and detaches the temporary SVG layers again before `--perf` runs (`#85`).
 - Line-end audits follow cubic and quadratic strokes with a bounded screen-space approximation, so lines attached between curve samples are not reported as loose.
 
 - `drive.mjs` waits for the page to load (up to 10 s) before it runs the first action, and gives up with an error when Chrome leaves a request unanswered for 60 s instead of hanging, as `capture.mjs` now does.

@@ -105,17 +105,46 @@ async function browser(target, { width, height, scale, throttle, noWebgl }) {
   return { send, evaluate, close, problems };
 }
 
-const HELPERS = String.raw`(() => {
+const HELPERS = String.raw`((needDom) => {
   const stage = document.querySelector(".iso-turn") || document.querySelector(".iso-stage");
-  const svgs = [...stage.querySelectorAll(":scope > svg")];
   const hook = window.__isoTurn;
   const C = hook.controller;
-  const vb = svgs[0].viewBox.baseVal;
+  const snap = Boolean(needDom && C.canvasLayers && C.canvasLayers.length && C.snapshot);
+  const detached = [];
+  const hiddenSvg = [];
+  if (snap) {
+    for (const c of C.snapshot()) {
+      const svg = c.closest("svg") || c;
+      if (!svg.isConnected) {
+        const canvas = stage.querySelector('canvas[data-canvas-live="' + svg.dataset.live + '"]');
+        if (canvas) canvas.after(svg);
+        else stage.appendChild(svg);
+        detached.push(svg);
+      } else if (svg.style.visibility === "hidden") {
+        hiddenSvg.push(svg);
+      }
+      svg.style.visibility = "";
+    }
+    for (const canvas of stage.querySelectorAll("canvas[data-canvas-live]")) canvas.style.display = "none";
+  }
+  const detachLive = () => {
+    for (const svg of detached) svg.remove();
+    for (const svg of hiddenSvg) svg.style.visibility = "hidden";
+    for (const canvas of stage.querySelectorAll("canvas[data-canvas-live]")) canvas.style.display = "";
+  };
+  const svgs = [...stage.querySelectorAll(":scope > svg")];
+  const refSvg = svgs[0] || (C.node && C.scene().runs[0] ? C.node(C.scene().runs[0].name)?.closest("svg") : null);
+  const vb = refSvg.viewBox.baseVal;
   const W = vb.width;
   const H = vb.height;
+  const layers = svgs.some((s) => s.dataset.live) ? svgs.map((s) => s.dataset.live || null) : C.scene().layers.map((l) => l.name);
   const css = [...document.querySelectorAll("style")].map((s) => s.textContent).join("\n");
   const theme = (stage.closest("[data-theme]") || document.body).getAttribute("data-theme") || "dark";
-  const setState = (state) => (typeof state === "number" ? C.set(state) : C.set(state));
+  const setState = (state) => {
+    const r = hook.set(state);
+    if (snap) C.snapshot();
+    return r;
+  };
   const matrixOf = (el) => {
     const m = el.ownerSVGElement.getScreenCTM().inverse().multiply(el.getScreenCTM());
     return "matrix(" + m.a + " " + m.b + " " + m.c + " " + m.d + " " + m.e + " " + m.f + ")";
@@ -130,9 +159,9 @@ const HELPERS = String.raw`(() => {
     URL.revokeObjectURL(url);
     return ctx.getImageData(0, 0, w, h).data;
   };
-  window.__tc = { stage, svgs, hook, C, W, H, css, theme, setState, matrixOf, decode };
-  return { W, H, layers: svgs.map((s) => s.dataset.live || null), theme };
-})()`;
+  window.__tc = { stage, svgs, hook, C, W, H, css, theme, setState, detachLive, matrixOf, decode };
+  return { W, H, layers, theme };
+})`;
 
 const ZBUFFER = String.raw`(() => {
   const { svgs, C, W, H, setState, matrixOf, decode } = window.__tc;
@@ -527,10 +556,11 @@ async function main() {
   if (statesFile && (!Array.isArray(states) || !states.length)) throw new Error("--states must contain a nonempty JSON list of poses");
   const page = await browser(target, options);
   const labelOf = (state, index) => (typeof state === "number" ? `${state.toFixed(3)}°` : `state ${index}`);
+  const needDom = argv.includes("--order") || argv.includes("--pops") || argv.includes("--lines");
   try {
-    const info = await page.evaluate(HELPERS);
+    const info = await page.evaluate(`${HELPERS}(${needDom})`);
     console.log(`page ${info.W}×${info.H} · live layers ${info.layers.filter(Boolean).join(", ")} · theme ${info.theme}`);
-    await page.evaluate(`window.__isoTurn.set(0) && 0`);
+    await page.evaluate(`window.__tc.setState(0) && 0`);
     const sweep = states ?? Array.from({ length: Math.round(360 / step) }, (_, i) => i * step);
     if (argv.includes("--order")) {
       const has = await page.evaluate("Boolean(window.__isoVerify)");
@@ -612,12 +642,12 @@ async function main() {
     }
     if (argv.includes("--lines")) {
       const angles = Array.from({ length: 24 }, (_, i) => i * 15);
-      const planted = await page.evaluate(`(() => { window.__isoTurn.set(0); const part = document.querySelector("svg[data-live] [data-p]"); const el = document.createElementNS("http://www.w3.org/2000/svg", "path"); el.setAttribute("class", "iso-line"); el.setAttribute("data-tone", "lo"); el.setAttribute("d", "M5 5L25 9"); el.setAttribute("data-plant", ""); part.appendChild(el); const r = (${LINE_ENDS})({ select: null, show: false }); el.remove(); return r ? r.problems.length : -1; })()`);
+      const planted = await page.evaluate(`(() => { window.__tc.setState(0); const part = document.querySelector("svg[data-live] [data-p]"); const el = document.createElementNS("http://www.w3.org/2000/svg", "path"); el.setAttribute("class", "iso-line"); el.setAttribute("data-tone", "lo"); el.setAttribute("d", "M5 5L25 9"); el.setAttribute("data-plant", ""); part.appendChild(el); const r = (${LINE_ENDS})({ select: null, show: false }); el.remove(); return r ? r.problems.length : -1; })()`);
       console.log(`lines control (a planted floating line): ${planted > 0 ? "fails as it should" : "nothing flagged: the check is broken"}`);
       if (!(planted > 0)) failed++;
       let bad = 0;
       for (const angle of angles) {
-        const r = await page.evaluate(`(() => { window.__isoTurn.set(${angle}); const r = (${LINE_ENDS})({ select: null, show: false }); return r ? { n: r.problems.length, list: r.problems.slice(0, 4).map((p) => p.what + " " + p.end + " " + p.gap.toFixed(2) + " px at " + p.at.join(",")) } : null; })()`);
+        const r = await page.evaluate(`(() => { window.__tc.setState(${angle}); const r = (${LINE_ENDS})({ select: null, show: false }); return r ? { n: r.problems.length, list: r.problems.slice(0, 4).map((p) => p.what + " " + p.end + " " + p.gap.toFixed(2) + " px at " + p.at.join(",")) } : null; })()`);
         if (r && r.n) {
           bad += r.n;
           console.log(`  ${angle}°: ${r.n} floating ends: ${r.list.join(" · ")}`);
@@ -627,6 +657,7 @@ async function main() {
       if (bad) failed++;
     }
     if (argv.includes("--perf")) {
+      if (needDom) await page.evaluate("window.__tc.detachLive()");
       await page.send("Performance.enable");
       const metrics = async () => Object.fromEntries((await page.send("Performance.getMetrics")).result.metrics.map((m) => [m.name, m.value]));
       const runs = [];

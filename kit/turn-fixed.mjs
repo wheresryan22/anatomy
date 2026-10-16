@@ -3123,7 +3123,8 @@ function t3Mount(stage, data, { onHold = null, onFrame = null, follow = null, pa
   const first = layerEls.values().next().value;
   const viewWidth = first && first.viewBox && first.viewBox.baseVal ? first.viewBox.baseVal.width : 0;
   const unitOf = () => {
-    const width = first ? first.getBoundingClientRect().width : 0;
+    const el = first && first.isConnected ? first : stage;
+    const width = el ? el.getBoundingClientRect().width : 0;
     return viewWidth && width ? Math.round((width / viewWidth) * 100) / 100 : 1;
   };
   let unit = unitOf();
@@ -3400,7 +3401,7 @@ function t3Mount(stage, data, { onHold = null, onFrame = null, follow = null, pa
     stats.unseparated = orderStats.unseparated;
     stats.emitted = emitted;
     t3State.detail = 1;
-    if (onFrame) onFrame(controller);
+    if (onFrame && !snapshotting) onFrame(controller);
     return { ...stats };
   };
   let detail = 1;
@@ -3423,7 +3424,7 @@ function t3Mount(stage, data, { onHold = null, onFrame = null, follow = null, pa
   let unwrap = new Map();
   const angleAt = (clientX, clientY, z = 0, groupName) => {
     const svg = first;
-    const box = svg.getBoundingClientRect();
+    const box = (svg && svg.isConnected ? svg : stage).getBoundingClientRect();
     const vb = svg.viewBox.baseVal;
     const x = vb.x + ((clientX - box.left) / box.width) * vb.width;
     const y = vb.y + ((clientY - box.top) / box.height) * vb.height;
@@ -3460,11 +3461,15 @@ function t3Mount(stage, data, { onHold = null, onFrame = null, follow = null, pa
     painter,
     emitted: () => emittedList,
     snapshot: () => {
+      const saved = { ...stats };
       snapshotNext = true;
       lastPoses = null;
       render();
-      lastPoses = null;
-      render();
+      if (numeric && canvasSet.size > 0) {
+        lastPoses = null;
+        render();
+      }
+      Object.assign(stats, saved);
       return [...containers.values()];
     },
     numeric: Boolean(numeric) && canvasSet.size > 0,
