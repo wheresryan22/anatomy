@@ -15,17 +15,27 @@ fadeLineSvg ramp out and pass; lineSvg(d, { free: true | "start" | "end" }) mark
 tip, rule lines standing for printed text). Exits 1 if any end floats; --out writes the card with each one ringed.`);
   process.exit(argv.length ? 0 : 1);
 }
+const fail = (message) => {
+  console.error(`lines: ${message}`);
+  process.exit(1);
+};
 const take = (flag, fallback) => {
   const at = argv.indexOf(flag);
   if (at < 0) return fallback;
   const value = argv[at + 1];
+  if (value === undefined || value.startsWith("--")) fail(`${flag} needs a value`);
   argv.splice(at, 2);
   return value;
 };
+const count = (flag, fallback) => {
+  const value = Number(take(flag, fallback));
+  if (!Number.isFinite(value) || value < 0) fail(`${flag} needs a number, 0 or more`);
+  return value;
+};
 const out = take("--out", null);
-const tolerance = Number(take("--tolerance", 1));
+const tolerance = count("--tolerance", 1);
 const select = take("--select", null);
-const wait = Number(take("--wait", 1500));
+const wait = count("--wait", 1500);
 const actions = JSON.stringify([["wait", wait], ["lines", out, select, { tolerance }]]);
 const child = spawn(process.execPath, [join(dirname(fileURLToPath(import.meta.url)), "drive.mjs"), argv[0], actions, ...argv.slice(1)], { stdio: "inherit" });
 child.on("exit", (code) => process.exit(code ?? 1));

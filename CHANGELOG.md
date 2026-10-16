@@ -15,6 +15,7 @@ All notable changes to Anatomy are recorded here. The format follows [Keep a Cha
 
 ### Fixed
 
+- `lines.mjs` rejects a `--tolerance` or `--wait` that is not a number of 0 or more, and `--out`, `--select`, `--tolerance` or `--wait` left without a value, instead of running the check with a `null` tolerance (strict, 0 viewBox px) or a `null` wait, or taking the next flag as the output file.
 - Line-end audits follow cubic and quadratic strokes with a bounded screen-space approximation, so lines attached between curve samples are not reported as loose.
 
 - `drive.mjs` waits for the page to load (up to 10 s) before it runs the first action, and gives up with an error when Chrome leaves a request unanswered for 60 s instead of hanging, as `capture.mjs` now does.
