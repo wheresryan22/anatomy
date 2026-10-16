@@ -15,6 +15,7 @@ All notable changes to Anatomy are recorded here. The format follows [Keep a Cha
 
 ### Fixed
 
+- `turn-check.mjs` rejects `--angles`, `--width`, `--height`, `--scale` and `--throttle` values it cannot use before it builds the figure or starts Chrome. A non-numeric angle used to crash `--fidelity` with `Cannot read properties of undefined (reading '0')`, and a bad `--width` or `--scale` went to Chrome as `NaN`.
 - Line-end audits follow cubic and quadratic strokes with a bounded screen-space approximation, so lines attached between curve samples are not reported as loose.
 
 - `drive.mjs` waits for the page to load (up to 10 s) before it runs the first action, and gives up with an error when Chrome leaves a request unanswered for 60 s instead of hanging, as `capture.mjs` now does.

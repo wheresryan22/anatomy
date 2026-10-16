@@ -492,12 +492,20 @@ async function main() {
     const at = argv.indexOf(flag);
     return at >= 0 ? argv[at + 1] : fallback;
   };
+  const numeric = (flag, fallback, least) => {
+    if (!argv.includes(flag)) return fallback;
+    const text = value(flag);
+    const number = text === undefined || text.trim() === "" ? NaN : Number(text);
+    if (!Number.isFinite(number) || number < least) throw new Error(`${flag} must be a finite number of at least ${least}`);
+    return number;
+  };
   const target = argv[0];
   let failed = 0;
   if (target.endsWith(".mjs")) {
+    const angles = (value("--angles", "") || Array.from({ length: 12 }, (_, i) => 7 + i * 30).join(",")).split(",").map((text) => (text.trim() === "" ? NaN : Number(text)));
+    if (!angles.every(Number.isFinite)) throw new Error("--angles must be a comma-separated list of numbers");
     const F = await import("./turn-fidelity.mjs");
     const { T, P } = await import(pathToFileURL(resolve(target)).href);
-    const angles = (value("--angles", "") || Array.from({ length: 12 }, (_, i) => 7 + i * 30).join(",")).split(",").map(Number);
     const plant = T.parts.find((part) => part.kind === "prism" && part.group && part.group.kind === "turn");
     if (plant) {
       const control = F.identity(T, P, angles.slice(0, 2), { plant: plant.name });
@@ -516,7 +524,8 @@ async function main() {
     console.log(failed ? `fidelity failed: ${failed}` : "fidelity passed");
     process.exit(failed ? 1 : 0);
   }
-  const options = { width: Number(value("--width", 1440)), height: Number(value("--height", 1100)), scale: Number(value("--scale", argv.includes("--perf") ? (Number(value("--width", 1440)) < 600 ? 3 : 2) : 1)), throttle: Number(value("--throttle", 1)), noWebgl: argv.includes("--no-webgl") };
+  const width = numeric("--width", 1440, 1);
+  const options = { width, height: numeric("--height", 1100, 1), scale: numeric("--scale", argv.includes("--perf") ? (width < 600 ? 3 : 2) : 1, 0.1), throttle: numeric("--throttle", 1, 1), noWebgl: argv.includes("--no-webgl") };
   const step = Number(value("--step", 1));
   if (!Number.isFinite(step) || step <= 0 || step > 360) throw new Error("--step must be a finite number greater than 0 and at most 360 degrees");
   const fine = Number(value("--fine", 0.1));
