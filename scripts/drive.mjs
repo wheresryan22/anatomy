@@ -98,18 +98,24 @@ async function main() {
   }
   const options = { width: 1440, height: 1100, scale: 1, reduced: false, theme: null, actions: null, noWebgl: false, preload: null };
   const rest = [];
+  const valueOf = (flag, value) => {
+    if (value === undefined) throw new Error(`${flag} needs a value`);
+    return value;
+  };
   for (let index = 0; index < argv.length; index++) {
     const arg = argv[index];
-    if (arg === "--width") options.width = Number(argv[++index]);
-    else if (arg === "--height") options.height = Number(argv[++index]);
-    else if (arg === "--scale") options.scale = Number(argv[++index]);
+    if (arg === "--width") options.width = Number(valueOf(arg, argv[++index]));
+    else if (arg === "--height") options.height = Number(valueOf(arg, argv[++index]));
+    else if (arg === "--scale") options.scale = Number(valueOf(arg, argv[++index]));
     else if (arg === "--reduced") options.reduced = true;
-    else if (arg === "--theme") options.theme = argv[++index];
+    else if (arg === "--theme") options.theme = valueOf(arg, argv[++index]);
     else if (arg === "--no-webgl") options.noWebgl = true;
-    else if (arg === "--preload") options.preload = readFileSync(argv[++index], "utf8");
-    else if (arg === "--actions") options.actions = JSON.parse(readFileSync(argv[++index], "utf8"));
+    else if (arg === "--preload") options.preload = readFileSync(valueOf(arg, argv[++index]), "utf8");
+    else if (arg === "--actions") options.actions = JSON.parse(readFileSync(valueOf(arg, argv[++index]), "utf8"));
     else rest.push(arg);
   }
+  for (const name of ["width", "height", "scale"]) if (!(Number.isFinite(options[name]) && options[name] > 0)) throw new Error(`--${name} needs a number above 0`);
+  if (options.theme !== null && options.theme !== "dark" && options.theme !== "light") throw new Error("--theme must be dark or light");
   const [target, script] = rest;
   const actions = options.actions ?? JSON.parse(script ?? "[]");
   const kinds = new Set(["scroll", "wait", "move", "click", "drag", "key", "slow", "until", "eval", "shot", "lines", "turn", "orbit", "sheet"]);

@@ -15,6 +15,7 @@ All notable changes to Anatomy are recorded here. The format follows [Keep a Cha
 
 ### Fixed
 
+- `drive.mjs` rejects a `--width`, `--height` or `--scale` that is not a number above 0, a `--theme` other than dark or light, and a flag left without its value (`--preload`, `--actions` and the rest), before Chrome starts. They used to reach Chrome as `NaN`, or die with `The "path" argument must be of type string`.
 - Line-end audits follow cubic and quadratic strokes with a bounded screen-space approximation, so lines attached between curve samples are not reported as loose.
 
 - `drive.mjs` waits for the page to load (up to 10 s) before it runs the first action, and gives up with an error when Chrome leaves a request unanswered for 60 s instead of hanging, as `capture.mjs` now does.
