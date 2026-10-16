@@ -1,3 +1,5 @@
+import { availableParallelism } from "node:os";
+import { Worker, MessageChannel, receiveMessageOnPort, isMainThread, workerData } from "node:worker_threads";
 import { TURN } from "./turn.mjs";
 import * as A from "./audit.mjs";
 import * as G from "./lathe.mjs";
@@ -325,10 +327,11 @@ const ORBIT_CHECKS = ["order", "rigid", "swept", "posed", "routes", "coverage", 
 
 export function orbit(T, R, P, options = {}) {
   const started = Date.now();
-  const { sweep = null, clips = [], poses = null, random = 2000, step = 0.05, crowd = [], cover = [], fittings = [], depthAngles = 36, depthEvents = 36, quick = false, log = null, routeStates = 240, posedStep = null, only = null } = options;
+  const { sweep = null, clips = [], poses = null, random = 2000, step = 0.05, crowd = [], cover = [], fittings = [], depthAngles = 36, depthEvents = 36, quick = false, log = null, routeStates = 240, posedStep = null, only = null, workers = false } = options;
   const say = (text) => log && log(text);
   const unknown = (only ?? []).filter((name) => !ORBIT_CHECKS.includes(name));
   if (unknown.length) throw new Error(`orbit: unknown check ${unknown.join(", ")} in only (the checks are ${ORBIT_CHECKS.join(", ")})`);
+  const workerCount = resolveWorkers(workers);
   const wants = (name) => !only || only.includes(name);
   const data = T.data;
   const scene = TURN.prepare(data, { unit: 1 });
@@ -345,6 +348,8 @@ export function orbit(T, R, P, options = {}) {
     for (const run of runs) TURN.emit(run, run.group >= 0 ? cams[run.group] : cams.world, frames[run.index]);
     return { cams, frames };
   };
+  const pool = workerCount > 1 ? createOrbitPool(workerCount, T, R, P, { crowd, quick, step }) : null;
+  try {
   say("separation");
   const allMargins = T.built?.report?.margins ?? [];
   for (const m of allMargins) if (m.margin < -0.08) result.separation.push({ a: m.a, b: m.b, margin: m.margin });
@@ -386,7 +391,41 @@ export function orbit(T, R, P, options = {}) {
     layer._pairs = list;
     return list;
   };
+  let precomputedOrder = null;
+  let precomputedIndex = 0;
+  const pendingOrder = [];
+  const applyPrecomputedOrder = (entry, values, tag, previous, record) => {
+    const cams = TURN.cams(scene, values);
+    const frames = entry.frames;
+    for (const f of frames) if (f.quadN) f.quads = f.quadList;
+    const orders = [];
+    scene.layers.forEach((layer, index) => {
+      const stats = {};
+      const order = TURN.order(layer, frames, cams, previous ? previous[index] : null, stats, scene);
+      orders.push(order);
+      if (stats.forced) result.forced.push({ layer: layer.name, state: tag, forced: stats.forced });
+      const lc = entry.checks[index];
+      for (const u of lc.framed) result.unseparated.push(u);
+      if (stats.unseparated) for (const u of lc.cross) result.unseparated.push(u);
+      if (lc.cycle) result.cycles.push(lc.cycle);
+    });
+    if (record) record(cams, frames, orders);
+    return { cams, frames, orders };
+  };
+  const flushPendingOrder = () => {
+    if (!pendingOrder.length) return;
+    const batch = pendingOrder.splice(0, pendingOrder.length);
+    const computed = pool.run("order", batch, { needFill: false });
+    for (let i = 0; i < computed.length; i++) applyPrecomputedOrder(computed[i], batch[i].values, batch[i].tag, null, null);
+  };
   const checkState = (values, tag, previous, record) => {
+    if (pool) {
+      if (precomputedOrder && precomputedIndex < precomputedOrder.length) return applyPrecomputedOrder(precomputedOrder[precomputedIndex++], values, tag, previous, record);
+      if (!previous && !record) {
+        pendingOrder.push({ values, tag });
+        return null;
+      }
+    }
     const { cams, frames } = emitAll(values);
     const orders = [];
     scene.layers.forEach((layer, index) => {
@@ -514,6 +553,11 @@ export function orbit(T, R, P, options = {}) {
   for (const family of wants("order") ? families : []) {
     const xs = samplesOf(family, frameOf(family));
     say(`order scan ${family.name}: ${xs.length} states`);
+    if (pool) {
+      flushPendingOrder();
+      precomputedOrder = pool.run("order", xs.map((x) => ({ values: family.at(x), tag: label(family, x) })), { needFill: true });
+      precomputedIndex = 0;
+    }
     let previous = null;
     const local = [];
     for (const x of xs) {
@@ -572,6 +616,7 @@ export function orbit(T, R, P, options = {}) {
     orderStates += share + Math.min(events.length, quick ? 100 : 4000);
   }
   for (const values of wants("order") ? extra.slice(0, quick ? 100 : extra.length) : []) checkState(values, `pose ${JSON.stringify(values).slice(0, 60)}`, null);
+  if (pool) flushPendingOrder();
   result.stats.orderStates = orderStates + extra.length;
   result.stats.changes = changes.length;
   result.changes = changes.sort((a, b) => b.count - a.count).slice(0, 10).map((c) => ({ family: c.family.name, x: c.x, count: c.count, pairs: c.pairs.slice(0, 4).map((p) => `${runs[p.i].name} / ${runs[p.j].name}`), at: c.family.at }));
@@ -649,14 +694,17 @@ export function orbit(T, R, P, options = {}) {
     for (const x of samplesOf(family, frame)) posedStates.push({ values: family.at(x), tag: label(family, x) });
   }
   for (const values of extra.slice(0, quick ? 40 : extra.length)) posedStates.push({ values, tag: "pose" });
-  const entries = [
-    ...liveShapes.map((entry) => ({ ...entry, kind: "live", sphere: sphereOf(pointsOf(entry.shape)) })),
-    ...staticShapes.map((entry) => ({ shape: entry.shape, part: { name: entry.item.name }, group: "static", item: entry.item, kind: "static", sphere: sphereOf(pointsOf(entry.shape)) })),
-  ];
+  const entries = pool
+    ? []
+    : [
+        ...liveShapes.map((entry) => ({ ...entry, kind: "live", sphere: sphereOf(pointsOf(entry.shape)) })),
+        ...staticShapes.map((entry) => ({ shape: entry.shape, part: { name: entry.item.name }, group: "static", item: entry.item, kind: "static", sphere: sphereOf(pointsOf(entry.shape)) })),
+      ];
   const posedSeen = new Set();
   const movingGroups = groups.filter((g) => !(g.kind === "turn" && !g.parent));
   const needsStatic = movingGroups.length > 0;
-  for (const { values, tag } of wants("posed") ? posedStates : []) {
+  const activePosedStates = wants("posed") ? (pool && posedStates.length ? (pool.mergePosed(posedStates, posedSeen, result.posed), []) : posedStates) : [];
+  for (const { values, tag } of activePosedStates) {
     const cams = TURN.cams(scene, values);
     const placed = entries.map((entry) => {
       if (entry.kind === "static") return { entry, c: entry.sphere.c, pose: null };
@@ -806,7 +854,7 @@ export function orbit(T, R, P, options = {}) {
   if (wants("continuity")) {
     TURN.exact(true);
     try {
-      continuity(T, scene, runs, groups, { step, quick, result, say, families, frameOf });
+      continuity(T, scene, runs, groups, { step, quick, result, say, families, frameOf, pool });
     } finally {
       TURN.exact(false);
     }
@@ -824,18 +872,27 @@ export function orbit(T, R, P, options = {}) {
   }
   for (const change of result.changes.slice(0, quick ? 4 : depthEvents)) depthStates.push({ values: change.at(change.x), tag: `${change.family} ${f3(change.x)}` });
   let checked = 0;
+  let depthOverlaps = null;
+  let depthCursor = 0;
+  if (pool && wants("depth") && depthStates.length) {
+    const computed = pool.run("depth", depthStates.map(({ values, tag }) => ({ values, tag, orderTag: `depth ${tag}` })));
+    precomputedOrder = computed.map((c) => c.order);
+    precomputedIndex = 0;
+    depthOverlaps = computed.map((c) => c.overlaps);
+  }
   for (const { values, tag } of wants("depth") ? depthStates : []) {
     const state = checkState(values, `depth ${tag}`, null);
+    const layerOverlaps = depthOverlaps ? depthOverlaps[depthCursor++] : null;
     scene.layers.forEach((layer, index) => {
       const items = [];
       for (const global of layer.parts) {
         const part = T.parts[global];
-        const pose = poseFor(state.cams, part.group);
-        items.push({ name: part.name, global, shapes: part.shapes.map((shape) => posed(shape, pose)), route: part.route, chunk: part.chunk });
+        const pose = layerOverlaps ? null : poseFor(state.cams, part.group);
+        items.push({ name: part.name, global, shapes: layerOverlaps ? null : part.shapes.map((shape) => posed(shape, pose)), route: part.route, chunk: part.chunk });
       }
       const ranks = new Map((T.order.length ? T.order : T.layers.map((l) => l.name)).map((name, at) => [name, at]));
-      for (const item of R.items) if (item.layer && ranks.has(item.layer) && item.shapes && item.shapes.length) items.push({ name: item.name, static: ranks.get(item.layer) < ranks.get(layer.name) ? "below" : "above", shapes: item.shapes });
-      const overlaps = A.overlapsOf(items, P, { step: quick ? 0.5 : 0.25, skip: (a, b) => A.sameRun(a, b) || (a.static && b.static) });
+      for (const item of R.items) if (item.layer && ranks.has(item.layer) && item.shapes && item.shapes.length) items.push({ name: item.name, static: ranks.get(item.layer) < ranks.get(layer.name) ? "below" : "above", shapes: layerOverlaps ? null : item.shapes });
+      const overlaps = layerOverlaps ? layerOverlaps[index] : A.overlapsOf(items, P, { step: quick ? 0.5 : 0.25, skip: (a, b) => A.sameRun(a, b) || (a.static && b.static) });
       for (const pair of overlaps.pairs) {
         const a = items[pair.a];
         const b = items[pair.b];
@@ -864,11 +921,14 @@ export function orbit(T, R, P, options = {}) {
   }
   result.stats.depthStates = depthStates.length;
   result.stats.depthPairs = checked;
+  } finally {
+    if (pool) pool.close();
+  }
   result.stats.seconds = (Date.now() - started) / 1000;
   return result;
 }
 
-function continuity(T, scene, runs, groups, { step, quick, result, say, families = [], frameOf = (f) => f.frame }) {
+function continuity(T, scene, runs, groups, { step, quick, result, say, families = [], frameOf = (f) => f.frame, pool = null }) {
   const stepSize = quick ? step * 10 : step;
   const measures = [];
   const worst = { q: 0, birth: 0, dot: 0, fade: 0, motion: 0, merge: 0 };
@@ -881,6 +941,7 @@ function continuity(T, scene, runs, groups, { step, quick, result, say, families
     else if (g.kind === "hinge") sweeps.push({ group: g, from: g.range[0], to: g.range[1], unit: "°" });
     else sweeps.push({ group: g, from: 0, to: g.travel, unit: "" });
   }
+  if (pool) continuitySweepsParallel(pool, T, scene, runs, sweeps, step, stepSize, k, worst, failures, measures, say);
   for (const sweep of sweeps) {
     const g = sweep.group;
     const parts = runs.filter((run) => run.group === g.index);
@@ -966,7 +1027,18 @@ function continuity(T, scene, runs, groups, { step, quick, result, say, families
   measures.sort((a, b) => b.value - a.value);
   let halvingFails = 0;
   let halvingChecked = 0;
+  const clipSteps = [];
+  let measureHalvingMap = null;
+  let clipHalvingList = null;
+  let clipHalvingCursor = 0;
   const halving = (run, at, x, dx) => {
+    if (pool) {
+      if (!measureHalvingMap) measureHalvingMap = batchMeasureHalving(pool, measures, quick ? 40 : 400);
+      else if (clipSteps.length && !clipHalvingList) clipHalvingList = batchClipHalving(pool, clipSteps, quick ? 60 : 400);
+      if (clipHalvingList) return clipHalvingList[clipHalvingCursor++];
+      const hit = measureHalvingMap.get(`${run.index}|${x.toFixed(4)}`);
+      if (hit) return hit;
+    }
     const emitAt = (value) => {
       const f = TURN.frame(run);
       const cams = TURN.cams(scene, at(value));
@@ -998,7 +1070,6 @@ function continuity(T, scene, runs, groups, { step, quick, result, say, families
     failures.push({ part: entry.run.name, group: g.name, at: entry.x, m: { halving: `${f2(h.full)} tone·px² step stays ${f2(h.half)}, ${f2(h.quarter)} and ${f2(h.eighth)} at a half, a quarter and an eighth of the step` } });
   }
   const areaRoles = (run) => run.roles.map((role, r) => (role.type === "face" || /^s[0-4]$/.test(role.name) || (run.kind === "tube" && role.name === "body") ? r : -1)).filter((r) => r >= 0);
-  const clipSteps = [];
   for (const family of families) {
     if (family.periodic) continue;
     const xs = samplesOf(family, frameOf(family));
@@ -1084,9 +1155,32 @@ export function orbitReport(result) {
 
 export const orbitFailures = (result) => ["separation", "unseparated", "cycles", "forced", "swaps", "layers", "rigid", "swept", "posed", "folds", "self", "crowding", "endon", "coverage", "depth", "continuity"].reduce((sum, key) => sum + result[key].length, 0);
 
+function workersFromArgv(argv) {
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--workers") {
+      const next = argv[i + 1];
+      return next !== undefined && !next.startsWith("-") ? (next.trim() === "" ? NaN : Number(next)) : true;
+    }
+    if (arg.startsWith("--workers=")) {
+      const raw = arg.slice(10).trim();
+      return raw === "" ? NaN : Number(raw);
+    }
+  }
+  return false;
+}
+
+function resolveWorkers(workers) {
+  if (workers === false || workers === null || workers === undefined) return 1;
+  if (workers === true) return Math.max(1, availableParallelism());
+  const n = typeof workers === "number" ? workers : typeof workers === "string" && workers.trim() !== "" ? Number(workers) : NaN;
+  if (!Number.isInteger(n) || n < 1) throw new Error(`orbit: workers must be a positive integer or true (got ${workers})`);
+  return n;
+}
+
 export function orbitOrExit(T, R, P, { flag = "--audit", argv = process.argv, ...options } = {}) {
   if (!argv.includes(flag)) return null;
-  const result = orbit(T, R, P, options);
+  const result = orbit(T, R, P, { workers: workersFromArgv(argv), ...options });
   console.log(orbitReport(result));
   const count = orbitFailures(result);
   const skipped = result.skipped.length;
@@ -1099,3 +1193,552 @@ export function orbitOrExit(T, R, P, { flag = "--audit", argv = process.argv, ..
   if (count) process.exitCode = 1;
   return result;
 }
+
+function cleanShape(s) {
+  if (!s) return s;
+  const out = { ...s, _b: undefined, _f: undefined };
+  if (s.cut) out.cut = Array.isArray(s.cut) ? s.cut.map(cleanShape) : cleanShape(s.cut);
+  return out;
+}
+
+function snapFrame(run, f) {
+  const roles = run.roles;
+  const out = { faces: [], sheets: [], dots: [], planes: [], fade: {}, outline: null, levels: f.levels ?? 0 };
+  roles.forEach((role, r) => {
+    if (role.type === "face") out.faces.push([f.d[r] ? areaOfPath(f.d[r]) : 0, f.q[r], Boolean(f.d[r])]);
+    else if (role.type === "path" && /^s[0-4]$/.test(role.name)) out.sheets.push([areaOfPath(f.d[r]), (f.d[r].match(/M/g) ?? []).length]);
+    else if (role.type === "dot") out.dots.push(f.o[r]);
+    else if (role.type === "plane") out.planes.push(f.o[r]);
+  });
+  for (const [prefix, set] of Object.entries(f.fade ?? {})) {
+    const map = new Map();
+    set.key.forEach((key, i) => map.set(key, Math.round(set.alpha[i] * TURN.levels) / TURN.levels));
+    out.fade[prefix] = map;
+  }
+  const edge = run.role.fill !== undefined ? f.d[run.role.fill] : run.role.body !== undefined ? f.d[run.role.body] : "";
+  out.outline = run.kind === "fixed" ? [Array.from({ length: f.hullN }, (_, i) => [f.hull[2 * i], f.hull[2 * i + 1]])] : pathPolys(edge);
+  out.slots = run.slots;
+  return out;
+}
+
+function compareSnaps(run, a, b, dx, reachPx) {
+  const m = { q: 0, birth: 0, dot: 0, fade: 0, motion: 0, merge: 0 };
+  for (let i = 0; i < Math.min(a.faces.length, b.faces.length); i++) {
+    const [areaA, qa, onA] = a.faces[i];
+    const [areaB, qb, onB] = b.faces[i];
+    if (onA && onB) m.q = Math.max(m.q, (Math.abs(qa - qb) * 16) / TURN.q);
+    if (onA !== onB) m.birth = Math.max(m.birth, onA ? areaA : areaB);
+    m.area = Math.max(m.area ?? 0, Math.abs(areaA - areaB));
+  }
+  for (let i = 0; i < Math.min(a.sheets.length, b.sheets.length); i++) {
+    const [areaA, countA] = a.sheets[i];
+    const [areaB, countB] = b.sheets[i];
+    if (!countA !== !countB) m.birth = Math.max(m.birth, Math.abs(areaA - areaB));
+    m.area = Math.max(m.area ?? 0, Math.abs(areaA - areaB));
+  }
+  for (let i = 0; i < Math.min(a.dots.length, b.dots.length); i++) m.dot = Math.max(m.dot, Math.abs(a.dots[i] - b.dots[i]));
+  for (let i = 0; i < Math.min(a.planes.length, b.planes.length); i++) m.dot = Math.max(m.dot, Math.abs(a.planes[i] - b.planes[i]));
+  for (const prefix of new Set([...Object.keys(a.fade), ...Object.keys(b.fade)])) {
+    const A0 = a.fade[prefix] ?? new Map();
+    const B0 = b.fade[prefix] ?? new Map();
+    for (const key of new Set([...A0.keys(), ...B0.keys()])) m.fade = Math.max(m.fade, Math.abs((A0.get(key) ?? 0) - (B0.get(key) ?? 0)));
+  }
+  const slots = Math.max(run.slots.bevel ?? 0, run.slots.ribs ?? 0);
+  if (slots && (a.levels > slots || b.levels > slots)) m.merge = Math.max(a.levels, b.levels) - slots;
+  if (a.outline.length && b.outline.length && a.outline[0].length && b.outline[0].length) m.motion = Math.max(0, hausdorffish(a.outline[0], b.outline[0]) - (1.5 * reachPx * dx + 0.05));
+  return m;
+}
+
+const ZERO_MEASURE = { value: 0 };
+
+function continuitySweepsParallel(pool, T, scene, runs, sweeps, step, stepSize, k, worst, failures, measures, say) {
+  const tasks = [];
+  const remaining = [];
+  const valuesAtByGroup = new Map();
+  for (const sweep of sweeps) {
+    const g = sweep.group;
+    const parts = runs.filter((run) => run.group === g.index);
+    if (!parts.length) continue;
+    const span = sweep.to - sweep.from;
+    const delta = g.kind === "slide" ? Math.max(0.01, span / 400) : stepSize;
+    const count = Math.max(1, Math.round(span / delta));
+    if (span === 0 || Math.abs(sweep.from + count * delta - sweep.to) > 1e-9) {
+      remaining.push(sweep);
+      continue;
+    }
+    const reach = parts.map((run) => {
+      let r = 0;
+      const part = T.parts[run.index];
+      for (const p of part.samples) r = Math.max(r, g.kind === "slide" ? 0 : Math.hypot(p[0], p[1]));
+      return r;
+    });
+    const valuesAt = (x) => ({ [g.name]: x });
+    valuesAtByGroup.set(g.index, valuesAt);
+    say(`continuity ${g.name}: ${count} steps of ${delta}${sweep.unit} over ${parts.length} parts`);
+    TURN.cams(scene, valuesAt(sweep.from));
+    for (let c = 1; c <= count; c++) TURN.cams(scene, valuesAt(sweep.from + c * delta));
+    const chunks = Math.min(pool.size, count);
+    for (let w = 0; w < chunks; w++) {
+      const cStart = Math.floor((w * count) / chunks) + 1;
+      const cEnd = Math.floor(((w + 1) * count) / chunks);
+      if (cStart <= cEnd) tasks.push({ groupIndex: g.index, groupName: g.name, groupKind: g.kind, from: sweep.from, delta, cStart, cEnd, reach, k, step });
+    }
+  }
+  sweeps.length = 0;
+  for (const s of remaining) sweeps.push(s);
+  if (!tasks.length) return;
+  const out = pool.run("continuitySweeps", tasks);
+  let totalMeasures = 0;
+  for (const chunk of out) {
+    for (const key of Object.keys(worst)) worst[key] = Math.max(worst[key], chunk.worst[key] ?? 0);
+    for (const f of chunk.failures) failures.push(f);
+    totalMeasures += chunk.measureCount;
+    for (const m of chunk.measures) measures.push({ run: runs[m.runIndex], x: m.x, dx: m.dx, value: m.value, motion: m.motion, birth: m.birth, valuesAt: valuesAtByGroup.get(m.groupIndex), reachPx: m.reachPx });
+  }
+  if (measures.length < totalMeasures) {
+    measures.push(ZERO_MEASURE);
+    measures.length = totalMeasures;
+  }
+}
+
+function batchMeasureHalving(pool, measures, limit) {
+  const seen = new Set();
+  const candidates = [];
+  for (const entry of measures.slice(0, limit)) {
+    if (!entry || !(entry.value > 1e-6)) break;
+    const key = `${entry.run.index}|${entry.x.toFixed(4)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    candidates.push({ key, runIndex: entry.run.index, nineValues: Array.from({ length: 9 }, (_, j) => entry.valuesAt(entry.x + (entry.dx * j) / 8)) });
+  }
+  const map = new Map();
+  if (!candidates.length) return map;
+  const computed = pool.run("halving", candidates);
+  for (let i = 0; i < candidates.length; i++) map.set(candidates[i].key, computed[i]);
+  return map;
+}
+
+function batchClipHalving(pool, clipSteps, limit) {
+  const candidates = clipSteps.slice(0, limit).map((entry) => ({
+    runIndex: entry.run.index,
+    nineValues: Array.from({ length: 9 }, (_, j) => entry.family.at(entry.x + (entry.dx * j) / 8)),
+  }));
+  return candidates.length ? pool.run("halving", candidates) : [];
+}
+
+function createOrbitPool(workerCount, T, R, P, { quick, step }) {
+  const liveShapeSet = new Set();
+  for (const part of T.parts) for (const shape of part.shapes ?? []) liveShapeSet.add(shape);
+  const init = {
+    P: { ...P },
+    data: T.data,
+    groups: T.groups.map((g) => ({ name: g.name, index: g.index, kind: g.kind, parent: g.parent ? g.parent.index : null, origin: g.origin, range: g.range, travel: g.travel, upright: g.upright, loose: g.loose })),
+    parts: T.parts.map((p) => ({ id: p.id, index: p.index, name: p.name, group: p.group ? p.group.index : null, layer: p.layer, route: p.route, chunk: p.chunk, samples: p.samples, shapes: (p.shapes ?? []).map(cleanShape) })),
+    order: T.order,
+    layers: (T.layers ?? []).map((l) => ({ name: l.name })),
+    margins: T.built?.report?.margins ?? [],
+    planes: [...(T.built?.planesByName?.entries() ?? [])],
+    rItems: (R.items ?? []).map((item) => ({
+      name: item.name,
+      layer: item.layer,
+      key: item.key,
+      route: item.route,
+      shapes: (item.shapes ?? []).map(cleanShape),
+      staticShapes: (item.shapes ?? []).filter((shape) => !liveShapeSet.has(shape)).map(cleanShape),
+    })),
+    quick,
+    step,
+  };
+  const workers = [];
+  for (let i = 0; i < workerCount; i++) {
+    const { port1, port2 } = new MessageChannel();
+    const sab = new SharedArrayBuffer(4);
+    const i32 = new Int32Array(sab);
+    const worker = new Worker(new URL(import.meta.url), { workerData: { turnAuditWorker: true, port: port2, sab, init }, transferList: [port2] });
+    workers.push({ worker, port: port1, i32 });
+  }
+  let taskId = 0;
+  const runChunks = (kind, items, extra = {}) => {
+    if (!items.length) return [];
+    const active = Math.min(workers.length, items.length);
+    const id = ++taskId;
+    const sent = [];
+    for (let w = 0; w < active; w++) {
+      const start = Math.floor((w * items.length) / active);
+      const end = Math.floor(((w + 1) * items.length) / active);
+      if (start >= end) continue;
+      const slot = workers[w];
+      Atomics.store(slot.i32, 0, 0);
+      slot.port.postMessage({ id, kind, items: items.slice(start, end), ...extra });
+      sent.push(slot);
+    }
+    const chunks = [];
+    for (const slot of sent) {
+      Atomics.wait(slot.i32, 0, 0, 300000);
+      const msg = receiveMessageOnPort(slot.port)?.message;
+      Atomics.store(slot.i32, 0, 0);
+      if (!msg) throw new Error("orbit worker timed out or exited without response");
+      if (msg.error) throw new Error(msg.error);
+      chunks.push(msg.out);
+    }
+    return chunks;
+  };
+  return {
+    size: workers.length,
+    run: (kind, items, extra) => runChunks(kind, items, extra).flat(1),
+    mergePosed: (posedStates, posedSeen, target) => {
+      for (const chunk of runChunks("posed", posedStates))
+        for (const { key, text } of chunk) {
+          if (posedSeen.has(key)) continue;
+          posedSeen.add(key);
+          target.push({ text });
+        }
+    },
+    close: () => {
+      for (const slot of workers) {
+        try {
+          slot.port.postMessage({ kind: "close" });
+          slot.port.close();
+        } catch {}
+        slot.worker.terminate();
+      }
+    },
+  };
+}
+
+function startOrbitWorker({ port, sab, init }) {
+  const i32 = new Int32Array(sab);
+  let initError = null;
+  let P, groups, parts, order, layers, margins, planesByName, rItems, quick, scene, runs, workFrames;
+  try {
+    ({ P, groups, parts, order, layers, margins, rItems, quick } = init);
+    for (const g of groups) g.parent = g.parent !== null ? groups[g.parent] : null;
+    for (const p of parts) p.group = p.group !== null ? groups[p.group] : null;
+    planesByName = new Map(init.planes);
+    scene = TURN.prepare(init.data, { unit: 1 });
+    runs = scene.runs;
+    workFrames = runs.map((run) => TURN.frame(run));
+  } catch (err) {
+    initError = err?.stack || String(err);
+  }
+  const relationOf = (layer, i, j, cams) => {
+    const plan = layer.planar;
+    for (let p = 0; p < plan.length; p += 5)
+      if ((plan[p] === i && plan[p + 1] === j) || (plan[p] === j && plan[p + 1] === i)) {
+        const g = runs[plan[p]].group;
+        const V = g >= 0 ? cams[g].V : cams.world.V;
+        const s = plan[p + 2] * V[0] + plan[p + 3] * V[1] + plan[p + 4] * V[2];
+        return plan[p] === i ? s : -s;
+      }
+    const a = runs[i];
+    const b = runs[j];
+    const ca = a.group >= 0 ? cams[a.group] : cams.world;
+    const cb = b.group >= 0 ? cams[b.group] : cams.world;
+    const hit = TURN.gjk(a.cloud, ca, b.cloud, cb, null, 32, TURN.hintsOf(a, ca, b, cb, cams.world));
+    const V = cams.world.V;
+    return hit.n[0] * V[0] + hit.n[1] * V[1] + hit.n[2] * V[2];
+  };
+  const pairsOf = (layer) => {
+    if (layer._pairs) return layer._pairs;
+    const list = [];
+    const seen = new Set();
+    for (let p = 0; p < layer.planar.length; p += 5) list.push([layer.planar[p], layer.planar[p + 1]]);
+    for (let p = 0; p < layer.dynamic.length; p += 2) list.push([layer.dynamic[p], layer.dynamic[p + 1]]);
+    for (let p = 0; p < (layer.framed ? layer.framed.length : 0); p += 6) list.push([layer.framed[p], layer.framed[p + 1]]);
+    for (const gp of layer.groupPairs ?? []) for (const i of gp.a) for (const j of gp.b) list.push([i, j]);
+    for (const [i, j] of list) seen.add(i * 65536 + j);
+    for (const i of layer.free) for (const j of layer.parts) {
+      if (i === j || runs[i].group === runs[j].group) continue;
+      const key = Math.min(i, j) * 65536 + Math.max(i, j);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      list.push([Math.min(i, j), Math.max(i, j)]);
+    }
+    layer._pairs = list;
+    return list;
+  };
+  const evalOrderState = (values, tag, needFill) => {
+    const cams = TURN.cams(scene, values);
+    for (const run of runs) TURN.emit(run, run.group >= 0 ? cams[run.group] : cams.world, workFrames[run.index]);
+    const checks = scene.layers.map((layer) => {
+      const framedOut = [];
+      const crossOut = [];
+      const framed = layer.framed ?? [];
+      for (let p = 0; p < framed.length; p += 6) {
+        const i = framed[p];
+        const j = framed[p + 1];
+        if (TURN.disjoint(workFrames[i], workFrames[j], 0.1)) continue;
+        const g = framed[p + 2];
+        const Rm = g >= 0 ? cams[g].R : EYE;
+        const n = [Rm[0] * framed[p + 3] + Rm[1] * framed[p + 4] + Rm[2] * framed[p + 5], Rm[3] * framed[p + 3] + Rm[4] * framed[p + 4] + Rm[5] * framed[p + 5], Rm[6] * framed[p + 3] + Rm[7] * framed[p + 4] + Rm[8] * framed[p + 5]];
+        const extent = (run) => {
+          const c = run.group >= 0 ? cams[run.group] : cams.world;
+          let lo = Infinity;
+          let hi = -Infinity;
+          for (let q = 0; q < run.cloud.length; q += 3) {
+            const x = run.cloud[q];
+            const y = run.cloud[q + 1];
+            const z = run.cloud[q + 2];
+            const v = n[0] * (c.R[0] * x + c.R[1] * y + c.R[2] * z + c.t[0]) + n[1] * (c.R[3] * x + c.R[4] * y + c.R[5] * z + c.t[1]) + n[2] * (c.R[6] * x + c.R[7] * y + c.R[8] * z + c.t[2]);
+            if (v < lo) lo = v;
+            if (v > hi) hi = v;
+          }
+          return [lo, hi];
+        };
+        const margin = extent(runs[j])[0] - extent(runs[i])[1];
+        if (margin < -0.08) framedOut.push({ layer: layer.name, state: tag, a: runs[i].name, b: runs[j].name, margin, framed: true });
+      }
+      for (const gp of layer.groupPairs ?? []) {
+        const Rm = gp.frame >= 0 ? cams[gp.frame].R : EYE;
+        const nw = [Rm[0] * gp.n[0] + Rm[1] * gp.n[1] + Rm[2] * gp.n[2], Rm[3] * gp.n[0] + Rm[4] * gp.n[1] + Rm[5] * gp.n[2], Rm[6] * gp.n[0] + Rm[7] * gp.n[1] + Rm[8] * gp.n[2]];
+        const along = (list, high) => {
+          let best = high ? -Infinity : Infinity;
+          for (const index of list) {
+            const run = runs[index];
+            const c = run.group >= 0 ? cams[run.group] : cams.world;
+            for (let q = 0; q < run.cloud.length; q += 3) {
+              const x = run.cloud[q];
+              const y = run.cloud[q + 1];
+              const z = run.cloud[q + 2];
+              const v = nw[0] * (c.R[0] * x + c.R[1] * y + c.R[2] * z + c.t[0]) + nw[1] * (c.R[3] * x + c.R[4] * y + c.R[5] * z + c.t[1]) + nw[2] * (c.R[6] * x + c.R[7] * y + c.R[8] * z + c.t[2]);
+              best = high ? Math.max(best, v) : Math.min(best, v);
+            }
+          }
+          return best;
+        };
+        const margin = along(gp.b, false) - along(gp.a, true);
+        if (margin < -0.08) framedOut.push({ layer: layer.name, state: tag, a: runs[gp.a[0]].name, b: runs[gp.b[0]].name, margin, framed: true });
+      }
+      const n = layer.parts.length;
+      const local = layer.local;
+      const adj = Array.from({ length: n }, () => []);
+      const indeg = new Int32Array(n);
+      for (const [i, j] of pairsOf(layer)) {
+        if (TURN.disjoint(workFrames[i], workFrames[j], 0.1)) continue;
+        const ri = runs[i];
+        const rj = runs[j];
+        if (ri.group !== rj.group) {
+          const ca = ri.group >= 0 ? cams[ri.group] : cams.world;
+          const cb = rj.group >= 0 ? cams[rj.group] : cams.world;
+          const hit = TURN.gjk(ri.cloud, ca, rj.cloud, cb, null, 32, TURN.hintsOf(ri, ca, rj, cb, cams.world));
+          if (hit.margin < -0.08) crossOut.push({ layer: layer.name, state: tag, a: ri.name, b: rj.name, margin: hit.margin });
+        }
+        const s = relationOf(layer, i, j, cams);
+        if (s < 1e-7 && s > -1e-7) continue;
+        const from = s > 0 ? local.get(i) : local.get(j);
+        const to = s > 0 ? local.get(j) : local.get(i);
+        adj[from].push(to);
+        indeg[to]++;
+      }
+      const queue = [];
+      for (let v = 0; v < n; v++) if (!indeg[v]) queue.push(v);
+      let seen = 0;
+      while (queue.length) {
+        const v = queue.pop();
+        seen++;
+        for (const w of adj[v]) if (--indeg[w] === 0) queue.push(w);
+      }
+      let cycle = null;
+      if (seen < n) {
+        const stuck = [];
+        for (let v = 0; v < n; v++) if (indeg[v] > 0) stuck.push(runs[layer.parts[v]].name);
+        let split = null;
+        for (const m of margins) if (stuck.includes(m.a) && stuck.includes(m.b) && (!split || m.margin > split.margin)) split = m;
+        const plane = split ? planesByName.get(`${split.a}|${split.b}`) : null;
+        cycle = { layer: layer.name, state: tag, parts: stuck.slice(0, 8), split: plane ? { part: split.b, a: split.a, b: split.b, n: plane.n, d: plane.d } : null };
+      }
+      return { framed: framedOut, cross: crossOut, cycle };
+    });
+    const frames = runs.map((run, i) => {
+      const f = workFrames[i];
+      const d = [];
+      if (needFill && run.role.fill !== undefined) d[run.role.fill] = f.d[run.role.fill];
+      const quadList = f.quadN && f.quadList ? f.quadList.map(([buf, n]) => [buf.slice(0, n * 2), n]) : null;
+      return {
+        d,
+        box: Float64Array.from(f.box),
+        hull: f.hull.slice(0, f.hullN * 2),
+        hullN: f.hullN,
+        quadN: f.quadN,
+        quadList,
+      };
+    });
+    return { cams, frames, checks };
+  };
+  const pointsCache = new Map();
+  const pointsOf = (shape) => {
+    if (!pointsCache.has(shape)) pointsCache.set(shape, surfacePoints(shape));
+    return pointsCache.get(shape);
+  };
+  let posedEntries = null;
+  const movingGroups = (groups ?? []).filter((g) => !(g.kind === "turn" && !g.parent));
+  const needsStatic = movingGroups.length > 0;
+  const getPosedEntries = () => {
+    if (posedEntries) return posedEntries;
+    const liveShapes = [];
+    for (const part of parts) for (const shape of part.shapes) liveShapes.push({ shape, part, group: part.group });
+    const staticShapes = [];
+    for (const item of rItems) for (const shape of item.staticShapes ?? []) staticShapes.push({ shape, item });
+    posedEntries = [
+      ...liveShapes.map((entry) => ({ ...entry, kind: "live", sphere: sphereOf(pointsOf(entry.shape)) })),
+      ...staticShapes.map((entry) => ({ shape: entry.shape, part: { name: entry.item.name }, group: "static", item: entry.item, kind: "static", sphere: sphereOf(pointsOf(entry.shape)) })),
+    ];
+    return posedEntries;
+  };
+  port.on("message", (msg) => {
+    if (msg.kind === "close") {
+      port.close();
+      return;
+    }
+    if (initError) {
+      port.postMessage({ id: msg.id, error: initError });
+      Atomics.store(i32, 0, 1);
+      Atomics.notify(i32, 0, 1);
+      return;
+    }
+    try {
+      let out = null;
+      if (msg.kind === "order") {
+        out = msg.items.map(({ values, tag }) => {
+          const { frames, checks } = evalOrderState(values, tag, msg.needFill);
+          return { frames, checks };
+        });
+      } else if (msg.kind === "posed") {
+        const entries = getPosedEntries();
+        const seen = new Set();
+        out = [];
+        for (const { values, tag } of msg.items) {
+          const cams = TURN.cams(scene, values);
+          const placed = entries.map((entry) => {
+            if (entry.kind === "static") return { entry, c: entry.sphere.c, pose: null };
+            const pose = poseFor(cams, entry.group);
+            return { entry, c: entry.group ? place(pose, entry.sphere.c) : entry.sphere.c, pose: entry.group ? pose : null };
+          });
+          placed.sort((a, b) => a.c[0] - a.entry.sphere.r - (b.c[0] - b.entry.sphere.r));
+          for (let i = 0; i < placed.length; i++) {
+            const A0 = placed[i];
+            const reachA = A0.c[0] + A0.entry.sphere.r + 0.5;
+            for (let j = i + 1; j < placed.length; j++) {
+              const B0 = placed[j];
+              if (B0.c[0] - B0.entry.sphere.r > reachA) break;
+              const a = A0.entry;
+              const b = B0.entry;
+              if (a.group === b.group) continue;
+              if (a.kind === "static" && b.kind === "static") continue;
+              if ((a.kind === "static" || b.kind === "static") && !needsStatic) continue;
+              if (a.kind === "static" || b.kind === "static") {
+                const live = a.kind === "static" ? b : a;
+                if (!live.group || (live.group.kind === "turn" && !live.group.parent)) continue;
+              }
+              if (a.shape.kind === "tube" && b.shape.kind === "tube") continue;
+              if (Math.hypot(A0.c[0] - B0.c[0], A0.c[1] - B0.c[1], A0.c[2] - B0.c[2]) > a.sphere.r + b.sphere.r + 0.5) continue;
+              const key = `${a.part.name}|${b.part.name}`;
+              if (seen.has(key)) continue;
+              const pa = A0.pose ?? IDENTITY;
+              const pb = B0.pose ?? IDENTITY;
+              let deepest = 0;
+              for (const p of pointsOf(a.shape)) {
+                const d = A.sdf(b.shape, unplace(pb, place(pa, p)));
+                if (d < deepest) deepest = d;
+              }
+              for (const p of pointsOf(b.shape)) {
+                const d = A.sdf(a.shape, unplace(pa, place(pb, p)));
+                if (d < deepest) deepest = d;
+              }
+              const limit = a.shape.kind === "tube" || b.shape.kind === "tube" ? -0.1 : -0.5;
+              if (deepest < limit) {
+                seen.add(key);
+                out.push({ key, text: `${a.part.name} × ${b.part.name} through ${f2(-deepest)} at ${tag}` });
+              }
+            }
+          }
+        }
+      } else if (msg.kind === "continuitySweeps") {
+        TURN.exact(true);
+        try {
+          out = msg.items.map((task) => {
+            const gParts = runs.filter((run) => run.group === task.groupIndex);
+            const frames = gParts.map((run) => TURN.frame(run));
+            const emitPart = (run, x, f) => {
+              const cams = TURN.cams(scene, { [task.groupName]: x });
+              TURN.emit(run, cams[task.groupIndex], f);
+              return f;
+            };
+            const worst = { q: 0, birth: 0, dot: 0, fade: 0, motion: 0, merge: 0 };
+            const failures = [];
+            const measures = [];
+            let measureCount = 0;
+            let previous = gParts.map((run, i) => snapFrame(run, emitPart(run, task.from + (task.cStart - 1) * task.delta, frames[i])));
+            for (let c = task.cStart; c <= task.cEnd; c++) {
+              const x = task.from + c * task.delta;
+              gParts.forEach((run, i) => {
+                const current = snapFrame(run, emitPart(run, x, frames[i]));
+                const reachPx = task.groupKind === "slide" ? task.k : (task.reach[i] * task.k * Math.PI) / 180;
+                const m = compareSnaps(run, previous[i], current, task.delta, reachPx);
+                for (const key of Object.keys(worst)) worst[key] = Math.max(worst[key], m[key] ?? 0);
+                const scale = task.delta / task.step;
+                if (m.q > Math.ceil(scale) || m.birth > 2 * scale || m.dot > 0.0105 * scale || m.fade > Math.ceil(scale) / 32 + 0.005 || m.merge > 0 || m.motion > 0) failures.push({ part: run.name, group: task.groupName, at: x, m });
+                const value = m.birth + m.motion * 4 + (m.area ?? 0);
+                measureCount++;
+                if (value > 1e-6) measures.push({ runIndex: run.index, groupIndex: task.groupIndex, x: x - task.delta, dx: task.delta, value, motion: m.motion, birth: m.birth, reachPx });
+                previous[i] = current;
+              });
+            }
+            return { worst, failures, measures, measureCount };
+          });
+        } finally {
+          TURN.exact(false);
+        }
+      } else if (msg.kind === "halving") {
+        TURN.exact(true);
+        try {
+          out = msg.items.map(({ runIndex, nineValues }) => {
+            const run = runs[runIndex];
+            const frames = nineValues.map((values) => {
+              const f = TURN.frame(run);
+              const cams = TURN.cams(scene, values);
+              TURN.emit(run, run.group >= 0 ? cams[run.group] : cams.world, f);
+              return f;
+            });
+            const measure = (scale) => {
+              const eighth = Math.max(...visibleChange(run, frames, scale));
+              const quarter = Math.max(...visibleChange(run, [0, 2, 4, 6, 8].map((j) => frames[j]), scale));
+              const half = Math.max(...visibleChange(run, [frames[0], frames[4], frames[8]], scale));
+              const full = visibleChange(run, [frames[0], frames[8]], scale)[0];
+              return { full, half, quarter, eighth, fails: full >= 2 && half > 0.6 * full && quarter > 0.6 * half && eighth > 0.6 * quarter && eighth >= 2 };
+            };
+            const coarse = measure(4);
+            return coarse.fails ? measure(16) : coarse;
+          });
+        } finally {
+          TURN.exact(false);
+        }
+      } else if (msg.kind === "depth") {
+        const ranks = new Map((order.length ? order : layers.map((l) => l.name)).map((name, at) => [name, at]));
+        out = msg.items.map(({ values, orderTag }) => {
+          const { cams, frames, checks } = evalOrderState(values, orderTag, false);
+          const overlaps = scene.layers.map((layer) => {
+            const items = [];
+            for (const global of layer.parts) {
+              const part = parts[global];
+              const pose = poseFor(cams, part.group);
+              items.push({ name: part.name, global, shapes: part.shapes.map((shape) => posed(shape, pose)), route: part.route, chunk: part.chunk });
+            }
+            for (const item of rItems) if (item.layer && ranks.has(item.layer) && item.shapes && item.shapes.length) items.push({ name: item.name, static: ranks.get(item.layer) < ranks.get(layer.name) ? "below" : "above", shapes: item.shapes });
+            const ov = A.overlapsOf(items, P, { step: quick ? 0.5 : 0.25, skip: (a, b) => A.sameRun(a, b) || (a.static && b.static) });
+            return { least: ov.least, pairs: ov.pairs.map((p) => ({ a: p.a, b: p.b, front: [{ area: p.front[0].area }, { area: p.front[1].area }] })) };
+          });
+          return { order: { frames, checks }, overlaps };
+        });
+      }
+      port.postMessage({ id: msg.id, out });
+    } catch (err) {
+      port.postMessage({ id: msg.id, error: err?.stack || String(err) });
+    }
+    Atomics.store(i32, 0, 1);
+    Atomics.notify(i32, 0, 1);
+  });
+}
+
+if (!isMainThread && workerData?.turnAuditWorker) startOrbitWorker(workerData);
+

@@ -414,6 +414,6 @@ import * as TA from "../../kit/turn-audit.mjs";
 ### Orbit audit (`kit/turn-audit.mjs`)
 | Export | What it does |
 |---|---|
-| `orbitOrExit(T, R, P, { flag = "--audit", argv, sweep, clips, poses, crowd, cover, fittings, quick, only, log })` | Runs `orbit` when the flag is present, prints the report, sets exit code 1 on any failure. Ends `turn audit passed` only for a full run; with `only` it ends `turn audit partial`, with `quick` `turn audit quick` (`3d.md`, section 13). |
-| `orbit(T, R, P, options)`, `orbitReport(result)`, `orbitFailures(result)` | The checks, the text, the count. `result.skipped` lists the lines `only` left out (printed `skipped`); `result.quick` is set for a quick run. |
+| `orbitOrExit(T, R, P, { flag = "--audit", argv, sweep, clips, poses, crowd, cover, fittings, quick, only, workers, log })` | Runs `orbit` when the flag is present, prints the report, sets exit code 1 on any failure. Reads `--workers` or `--workers=N` from `argv` unless `workers` is passed. Ends `turn audit passed` only for a full run; with `only` it ends `turn audit partial`, with `quick` `turn audit quick` (`3d.md`, section 13). |
+| `orbit(T, R, P, options)`, `orbitReport(result)`, `orbitFailures(result)` | The checks, the text, the count. `options.workers` (`true` or a worker count) runs `order`, `posed`, `continuity` and `depth` across `node:worker_threads` with identical results. `result.skipped` lists the lines `only` left out (printed `skipped`); `result.quick` is set for a quick run. |
 | `posed(shape, pose)`, `eventsOf(T, layer)` | A recorded shape moved by a group pose; a layer's edge-on angles. |
