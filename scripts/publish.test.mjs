@@ -117,3 +117,27 @@ test("a failed --force publish leaves the existing figure as it was", () => {
     rmSync(repo, { recursive: true, force: true });
   }
 });
+
+test("explicit pages cannot silently replace another page with the same key", () => {
+  for (const [names, theme, key] of [
+    [["main.html", "alt.html"], "dark", "dark"],
+    [["A B.html", "a-b.html"], "", "a-b"],
+  ]) {
+    const source = mkdtempSync(join(tmpdir(), "anatomy-page-collision-"));
+    const repo = gallery();
+    try {
+      const html = `<!doctype html><body data-theme="${theme}"><svg></svg></body>`;
+      for (const page of names) writeFileSync(join(source, page), html);
+      writeFileSync(join(source, "build.mjs"), `import {writeFileSync} from 'node:fs'; for (const page of ${JSON.stringify(names)}) writeFileSync(new URL(page, import.meta.url), ${JSON.stringify(html)});`);
+      assert.throws(() => publish({ source, into: repo, id: "collision", title: "Collision", prompt: "x", author: "octo-cat", agent: "Codex", license: "MIT", build: "build.mjs", pages: names, tags: [], noSession: true, noPreview: true }), (error) => {
+        assert.match(error.message, /page key collision/);
+        for (const value of [...names, key]) assert.ok(error.message.includes(value), error.message);
+        return true;
+      });
+      assert.ok(!existsSync(join(repo, "figures", "octo-cat", "collision")), "no incomplete figure is published locally");
+    } finally {
+      rmSync(source, { recursive: true, force: true });
+      rmSync(repo, { recursive: true, force: true });
+    }
+  }
+});

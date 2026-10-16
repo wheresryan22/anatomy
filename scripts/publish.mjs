@@ -95,7 +95,14 @@ function detectPages(source, files, given) {
     const named = given.filter(Boolean);
     for (const page of named) if (!files.includes(page)) throw new Error(`page ${page} not found in ${source}; build the figure first`);
     const pages = {};
-    for (const page of named) pages[themeOf(source, page) === "light" ? "light" : themeOf(source, page) === "dark" ? "dark" : page.replace(/\.html$/, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 24)] = page;
+    for (const page of named) {
+      const theme = themeOf(source, page);
+      const key = theme === "light" || theme === "dark" ? theme : page.replace(/\.html$/, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 24);
+      if (Object.hasOwn(pages, key) && pages[key] !== page) {
+        throw new Error(`page key collision "${key}": ${pages[key]} and ${page}; give the pages distinct data-theme values or filename slugs`);
+      }
+      pages[key] = page;
+    }
     return pages;
   }
   const pairs = html.filter((file) => !file.endsWith("-light.html") && html.includes(file.replace(/\.html$/, "-light.html")));
