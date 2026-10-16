@@ -1488,7 +1488,7 @@ const meetBox = (a, b) => {
 const areaOf = (box) => (box ? Math.max(0, box[2] - box[0]) * Math.max(0, box[3] - box[1]) : 0);
 
 export function markupBox(svg) {
-  const tags = [...svg.matchAll(/<(\/?)([a-zA-Z]+)((?:"[^"]*"|'[^']*'|[^'">])*?)(\/?)>/g)];
+  const tags = [...svg.matchAll(/<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<(\/?)([a-zA-Z]+)((?:"[^"]*"|'[^']*'|[^'">])*?)(\/?)>/g)].filter((match) => match[2]);
   const clips = new Map();
   let clipId = null;
   for (const [, close, tag, attrs, self] of tags) {
