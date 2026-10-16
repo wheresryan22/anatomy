@@ -15,6 +15,7 @@ All notable changes to Anatomy are recorded here. The format follows [Keep a Cha
 
 ### Fixed
 
+- `audit.mjs` `markupBox` reads lengths written with `px` (`x="10px"`) as plain numbers, and reads a malformed length as 0 as Chrome does. A `px` length used to turn the whole box into `NaN`, so `coverage` reported the part as 0% covered and `T.fixed` got a `NaN` box. A shape with a length it cannot resolve (`%`, `em`, `mm`) is left out of the box, and a `clipPath` with one no longer clips.
 - Line-end audits follow cubic and quadratic strokes with a bounded screen-space approximation, so lines attached between curve samples are not reported as loose.
 
 - `drive.mjs` waits for the page to load (up to 10 s) before it runs the first action, and gives up with an error when Chrome leaves a request unanswered for 60 s instead of hanging, as `capture.mjs` now does.

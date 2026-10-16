@@ -1402,10 +1402,14 @@ const attributeOf = (attrs, name) => {
     return value > 0 && value <= 0x10ffff ? String.fromCodePoint(value) : all;
   });
 };
+const lengthOf = (text) => {
+  const hit = (text ?? "").match(/^\s*([-+]?(?:\d*\.\d+|\d+)(?:e[-+]?\d+)?)([a-z]*|%)\s*$/i);
+  return !hit ? 0 : !hit[2] || hit[2].toLowerCase() === "px" ? Number(hit[1]) : NaN;
+};
 
 function pointsOfShape(tag, attrs) {
   const get = (name) => attributeOf(attrs, name);
-  const num = (name) => Number(get(name) ?? 0);
+  const num = (name) => lengthOf(get(name));
   if (tag === "path") {
     const d = get("d") ?? "";
     const out = [];
@@ -1470,7 +1474,7 @@ const boxOfPoints = (points, m) => {
 const cornersOfBox = ([x0, y0, x1, y1]) => [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
 const boxOfShape = (tag, attrs, m) => {
   if (tag !== "circle" && tag !== "ellipse") return boxOfPoints(pointsOfShape(tag, attrs), m);
-  const num = (name) => Number(attributeOf(attrs, name) ?? 0);
+  const num = (name) => lengthOf(attributeOf(attrs, name));
   const rx = tag === "circle" ? num("r") : num("rx");
   const ry = tag === "circle" ? rx : num("ry");
   const x = m[0] * num("cx") + m[2] * num("cy") + m[4];
@@ -1503,7 +1507,13 @@ export function markupBox(svg) {
         clipId = null;
         continue;
       }
-      clips.set(clipId, unionBox(clips.get(clipId), boxOfShape(tag, attrs, matrixOf(attributeOf(attrs, "transform")))));
+      const shape = boxOfShape(tag, attrs, matrixOf(attributeOf(attrs, "transform")));
+      if (shape?.some(Number.isNaN)) {
+        clips.delete(clipId);
+        clipId = null;
+        continue;
+      }
+      clips.set(clipId, unionBox(clips.get(clipId), shape));
     }
   }
   const stack = [{ m: [1, 0, 0, 1, 0, 0], clip: null, skip: false }];
@@ -1522,7 +1532,7 @@ export function markupBox(svg) {
     const frame = { m, clip, skip: Boolean(empty) || top.skip || ["defs", "clipPath", "mask", "linearGradient", "radialGradient", "pattern", "text", "title"].includes(tag) || (attributeOf(attrs, "class") ?? "").includes("iso-halo") };
     if (!frame.skip) {
       const shape = boxOfShape(tag, attrs, m);
-      if (shape) box = unionBox(box, frame.clip ? meetBox(shape, frame.clip) : shape);
+      if (shape && !shape.some(Number.isNaN)) box = unionBox(box, frame.clip ? meetBox(shape, frame.clip) : shape);
     }
     if (!self) stack.push(frame);
   }
