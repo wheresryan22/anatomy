@@ -165,7 +165,6 @@ function lineEnds({ select = null, tolerance = 1, root: rootSlack = 2, mark = 7,
     grid.get(id).push(entry);
   };
   const lines = [];
-  let scale = 1;
   for (const el of shapes) {
     const cs = getComputedStyle(el);
     const alpha = opacityOf(el);
@@ -196,7 +195,7 @@ function lineEnds({ select = null, tolerance = 1, root: rootSlack = 2, mark = 7,
     if (!stroked) continue;
     const owner = el.closest("svg");
     const viewCtm = owner && owner.getScreenCTM();
-    if (viewCtm) scale = Math.hypot(viewCtm.a, viewCtm.b) || scale;
+    const scale = (viewCtm && Math.hypot(viewCtm.a, viewCtm.b)) || 1;
     const curveTolerance = 0.15 / Math.max(1, Math.hypot(ctm.a, ctm.b, ctm.c, ctm.d));
     const subpaths = geometryOf(el, curveTolerance).map((sub, index) => ({ ...sub, index, flat: sub.points.map(map) }));
     subpaths.forEach((sub) => {
@@ -208,7 +207,7 @@ function lineEnds({ select = null, tolerance = 1, root: rootSlack = 2, mark = 7,
       }
     });
     const checked = el.classList.contains("iso-line") && !skipClass.some((name) => el.classList.contains(name)) && alpha >= least;
-    if (checked) lines.push({ el, subpaths, alpha, free: el.getAttribute("data-free") });
+    if (checked) lines.push({ el, subpaths, alpha, scale, free: el.getAttribute("data-free") });
   }
   const near = (p, reach) => {
     const out = new Set();
@@ -269,9 +268,10 @@ function lineEnds({ select = null, tolerance = 1, root: rootSlack = 2, mark = 7,
   };
   const problems = [];
   let ends = 0;
-  const slack = tolerance * scale;
-  const rooted = rootSlack * scale;
   for (const line of lines) {
+    const { scale } = line;
+    const slack = tolerance * scale;
+    const rooted = rootSlack * scale;
     for (const sub of line.subpaths) {
       if (sub.closed || sub.flat.length < 2) continue;
       const first = sub.flat[0];
