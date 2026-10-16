@@ -1491,11 +1491,13 @@ export function markupBox(svg) {
   const tags = [...svg.matchAll(/<(\/?)([a-zA-Z]+)((?:"[^"]*"|'[^']*'|[^'">])*?)(\/?)>/g)];
   const clips = new Map();
   let clipId = null;
+  let clipMatrix = null;
   for (const [, close, tag, attrs, self] of tags) {
     if (tag === "clipPath" && !close) {
       const id = attributeOf(attrs, "id");
       if (id) clips.set(id, null);
       clipId = self ? null : id;
+      clipMatrix = matrixOf(attributeOf(attrs, "transform"));
       continue;
     }
     if (clipId) {
@@ -1503,7 +1505,7 @@ export function markupBox(svg) {
         clipId = null;
         continue;
       }
-      clips.set(clipId, unionBox(clips.get(clipId), boxOfShape(tag, attrs, matrixOf(attributeOf(attrs, "transform")))));
+      clips.set(clipId, unionBox(clips.get(clipId), boxOfShape(tag, attrs, multiply(clipMatrix, matrixOf(attributeOf(attrs, "transform"))))));
     }
   }
   const stack = [{ m: [1, 0, 0, 1, 0, 0], clip: null, skip: false }];
