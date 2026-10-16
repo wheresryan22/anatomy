@@ -681,7 +681,7 @@ const DATA = {
 };
 
 const CSS = readFileSync(join(HERE, "arcade-cabinet.css"), "utf8");
-const latheSource = readFileSync(join(HERE, "..", "..", "kit", "lathe.mjs"), "utf8")
+const latheSource = readFileSync(new URL("../../kit/lathe.mjs", import.meta.url), "utf8")
   .replace(/^import .*$/m, "")
   .replace(/^export /gm, "");
 const latheScript = `const G = (() => {${latheSource}\nreturn { viewOf, scaleOf, frameAlong, frameOf, pointOf, disc, sphereOf, prismOf, circleOf, arcOf, dot3, add3, sub3, mul3, unit3, cross3, len3, lightOf, toneOf, radialOf };})();\n`;
