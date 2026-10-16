@@ -119,11 +119,11 @@ Anything with `until` or `eval` goes in an actions file. This `ignite.json` wait
 ]
 ```
 
-**3D figures.** The orbit audit is slow (budget 30 to 40 s per part for a full run), so iterate with `--quick` and run the full audit in the background. Only a full run's `turn audit passed` counts.
+**3D figures.** The orbit audit is slow (budget 30 to 40 s per part for a full single-threaded run), so iterate with `--quick`, pass `--workers` to fan states across worker threads, and run the full audit in the background when needed. Only a full run's `turn audit passed` counts.
 
 ```sh
-node examples/turning-dial/build.mjs --light --audit --quick
-node examples/turning-dial/build.mjs --light --audit > audit.txt 2>&1 &
+node examples/turning-dial/build.mjs --light --audit --quick --workers
+node examples/turning-dial/build.mjs --light --audit --workers > audit.txt 2>&1 &
 node scripts/turn-check.mjs examples/turning-dial/build.mjs --fidelity
 node scripts/turn-check.mjs examples/turning-dial/turning-dial-verify-light.html --order --step 1
 node scripts/turn-check.mjs examples/turning-dial/turning-dial-light.html --lines

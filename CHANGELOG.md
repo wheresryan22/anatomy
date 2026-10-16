@@ -6,6 +6,7 @@ All notable changes to Anatomy are recorded here. The format follows [Keep a Cha
 
 ### Added
 
+- Opt-in parallel 3D orbit audit (`kit/turn-audit.mjs`): pass `workers: true` (or a worker count) to `orbit`, or `--workers` / `--workers=N` on the command line through `orbitOrExit`, to fan `order`, `posed`, `continuity` and `depth` checks across `node:worker_threads` with results identical to the single-threaded run.
 - Antigravity support, alongside Claude Code, OpenCode and Codex. Documented user and project installation paths in the README and CONTRIBUTING, updated SKILL.md compatibility, and added Antigravity to the bug report form.
 - MiniMax Code support. The README and CONTRIBUTING document its user (`~/.minimax/skills`) and project (`.minimax/skills`) folders and `npx skills add ... -a minimax-code`, SKILL.md lists it, and the bug report form offers it.
 
