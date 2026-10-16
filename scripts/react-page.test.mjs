@@ -156,7 +156,7 @@ export function NestedClientFigure() {
     out: join(figDir, "unkeyed.html"),
   });
   assert.equal(unkeyed.problems.length, 1);
-  assert.match(unkeyed.problems[0], /element prop "dial" passed to LiveRig is missing a root key/);
+  assert.match(unkeyed.problems[0], /key-warning trap:.*element prop "dial" passed to LiveRig is missing a root key/);
 
   const nested = await buildReactPage({
     target: figDir,
@@ -164,10 +164,74 @@ export function NestedClientFigure() {
     out: join(figDir, "nested.html"),
   });
   assert.equal(nested.problems.length, 1);
-  assert.match(nested.problems[0], /Client component ClientPiece is nested inside server-built element prop "part" passed to LiveRig/);
+  assert.match(nested.problems[0], /key-warning trap:.*Client component ClientPiece is nested inside server-built element prop "part" passed to LiveRig/);
 
   await assert.rejects(
     runFile(process.execPath, [resolve("scripts/react-page.mjs"), figDir, "--export", "UnkeyedFigure", "--out", join(figDir, "cli-unkeyed.html")]),
-    (error) => error.code === 1 && /element prop "dial" passed to LiveRig is missing a root key/.test(error.stderr),
+    (error) => error.code === 1 && /key-warning trap:.*element prop "dial" passed to LiveRig is missing a root key/.test(error.stderr),
   );
 });
+
+test("resolves tsconfig paths, wraps forwardRef client components, checks array element keys, and validates options before building", async () => {
+  const projDir = mkdtempSync(join(tempDir, "tsconfig-proj-"));
+  const sharedDir = mkdtempSync(join(projDir, "shared-"));
+  const star = "*";
+  writeFileSync(
+    join(projDir, "tsconfig.json"),
+    JSON.stringify({
+      compilerOptions: {
+        baseUrl: ".",
+        paths: {
+          [`@shared/${star}`]: [`./${sharedDir.slice(projDir.length + 1)}/${star}`],
+        },
+      },
+    }),
+  );
+  writeFileSync(
+    join(sharedDir, "forward-live.tsx"),
+    `"use client";
+import * as React from "react";
+import { IsoFigure } from "@/components/iso/react/draw";
+export const ForwardLive = React.forwardRef<HTMLDivElement, { items: React.ReactNode[] }>(function ForwardLive({ items }, ref) {
+  return (
+    <div ref={ref}>
+      <IsoFigure width={200} height={120} label="forward">
+        {items}
+      </IsoFigure>
+    </div>
+  );
+});
+`,
+  );
+  writeFileSync(
+    join(projDir, "figure.tsx"),
+    `import { Plate, Solid } from "@/components/iso/react/draw";
+import { fitProjection, slabOf } from "@/components/iso/iso-kit";
+import { ForwardLive } from "@shared/forward-live";
+const P = fitProjection([[-20, -20, 0], [20, 20, 10]], 200, 120);
+const SLAB = slabOf({ x: -16, y: -12, w: 32, d: 24, r: 2 }, 0, 6, P);
+export default function ArrayKeyFigure() {
+  return (
+    <Plate fig="Fig 4" title="Array probe" readout="ok">
+      <ForwardLive items={[<g key="a"><Solid paths={SLAB} tone="mid" /></g>, <g><Solid paths={SLAB} tone="hi" /></g>]} />
+    </Plate>
+  );
+}
+`,
+  );
+
+  const built = await buildReactPage({ target: projDir, out: join(projDir, "out.html") });
+  assert.equal(built.problems.length, 1);
+  assert.match(built.problems[0], /key-warning trap:.*array prop "items" passed to ForwardLive contains an element without a key/);
+
+  await assert.rejects(
+    () => buildReactPage({ target: projDir, css: [join(projDir, "missing.css")], out: join(projDir, "out2.html") }),
+    /css file not found/,
+  );
+
+  await assert.rejects(
+    runFile(process.execPath, [resolve("scripts/react-page.mjs")]),
+    (error) => error.code === 1 && /missing target figure folder or \.tsx file/.test(error.stderr),
+  );
+});
+

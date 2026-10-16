@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSy
 import Module, { createRequire } from "node:module";
 import { basename, delimiter, dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { format } from "node:util";
 import { ISO_CSS, pageHtml } from "../kit/iso-kit.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -160,13 +161,56 @@ function isClientModule(filePath) {
   return /^\s*["']use client["']\s*;?/.test(text);
 }
 
+function loadConfigPaths(dir) {
+  for (const name of ["tsconfig.json", "jsconfig.json"]) {
+    const file = join(dir, name);
+    if (!existsSync(file) || statSync(file).isDirectory()) continue;
+    try {
+      const parsed = JSON.parse(readFileSync(file, "utf8"));
+      const compilerOptions = parsed?.compilerOptions;
+      if (compilerOptions && typeof compilerOptions === "object") {
+        return {
+          baseDir: resolve(dir, compilerOptions.baseUrl || "."),
+          paths: compilerOptions.paths && typeof compilerOptions.paths === "object" ? compilerOptions.paths : null,
+        };
+      }
+    } catch {}
+  }
+  return null;
+}
+
 function resolveAliasPath(specifier, resolveDir) {
-  if (!specifier.startsWith("@/") && !specifier.startsWith("~/")) return null;
-  const sub = specifier.slice(2);
   let current = resolve(resolveDir);
   while (true) {
-    const direct = fileExistsWithExt(join(current, sub)) ?? fileExistsWithExt(join(current, "src", sub));
-    if (direct) return direct;
+    const config = loadConfigPaths(current);
+    if (config?.paths) {
+      for (const [pattern, targets] of Object.entries(config.paths)) {
+        if (!Array.isArray(targets)) continue;
+        const star = pattern.indexOf("*");
+        if (star === -1) {
+          if (specifier !== pattern) continue;
+          for (const target of targets) {
+            const found = fileExistsWithExt(resolve(config.baseDir, target));
+            if (found) return found;
+          }
+        } else {
+          const prefix = pattern.slice(0, star);
+          const suffix = pattern.slice(star + 1);
+          if (!specifier.startsWith(prefix) || !specifier.endsWith(suffix)) continue;
+          const matched = specifier.slice(prefix.length, specifier.length - suffix.length);
+          for (const target of targets) {
+            const mapped = target.replace("*", matched);
+            const found = fileExistsWithExt(resolve(config.baseDir, mapped));
+            if (found) return found;
+          }
+        }
+      }
+    }
+    if (specifier.startsWith("@/") || specifier.startsWith("~/")) {
+      const sub = specifier.slice(2);
+      const direct = fileExistsWithExt(join(current, sub)) ?? fileExistsWithExt(join(current, "src", sub));
+      if (direct) return direct;
+    }
     const parent = dirname(current);
     if (parent === current) break;
     current = parent;
@@ -205,7 +249,7 @@ function checkNestedClient(node, propName, ownerName, seen) {
   const type = node.type;
   if (type && (type.__anatomyClient || (typeof type === "object" && type.type && type.type.__anatomyClient))) {
     const clientName = type.__anatomyClientName || (type.type && type.type.__anatomyClientName) || type.displayName || type.name || "ClientComponent";
-    report(\`Client component \${clientName} is nested inside server-built element prop "\${propName}" passed to \${ownerName}.\`);
+    report(\`key-warning trap: Client component \${clientName} is nested inside server-built element prop "\${propName}" passed to \${ownerName}.\`);
     return;
   }
   if (typeof type === "function" && !(type.prototype && type.prototype.isReactComponent)) {
@@ -220,7 +264,9 @@ function inspectProps(props, name) {
   if (!props || typeof props !== "object") return;
   for (const [key, item] of Object.entries(props)) {
     if (key !== "children" && React.isValidElement(item) && item.key == null) {
-      report(\`Each child in a list should have a unique "key" prop: element prop "\${key}" passed to \${name} is missing a root key.\`);
+      report(\`key-warning trap: Each child in a list should have a unique "key" prop: element prop "\${key}" passed to \${name} is missing a root key.\`);
+    } else if (Array.isArray(item) && item.some((child) => React.isValidElement(child) && child.key == null)) {
+      report(\`key-warning trap: Each child in a list should have a unique "key" prop: array prop "\${key}" passed to \${name} contains an element without a key.\`);
     }
     if (React.isValidElement(item) || Array.isArray(item)) {
       checkNestedClient(item, key, name, new Set());
@@ -234,6 +280,16 @@ export function __wrapClient(value, name) {
     memoized.__anatomyClient = true;
     memoized.__anatomyClientName = name;
     return memoized;
+  }
+  if (value && typeof value === "object" && value.$$typeof && typeof value.render === "function") {
+    const forwarded = React.forwardRef(function AnatomyClientForwardRef(props, ref) {
+      inspectProps(props, name);
+      return value.render(props, ref);
+    });
+    forwarded.__anatomyClient = true;
+    forwarded.__anatomyClientName = name;
+    forwarded.displayName = value.displayName || value.render.displayName || value.render.name || name;
+    return forwarded;
   }
   if (typeof value !== "function" || (value.prototype && value.prototype.isReactComponent)) return value;
   const wrapped = function AnatomyClientBoundary(props) {
@@ -376,6 +432,11 @@ export async function buildReactPage(options) {
   } = options;
   if (!target) throw new Error("missing target figure folder or .tsx file");
   const { entryPath, figureDir, baseName } = resolveEntry(target);
+  const resolvedExtraCss = css.map((extra) => {
+    const full = resolve(extra);
+    if (!existsSync(full) || statSync(full).isDirectory()) throw new Error(`css file not found: ${extra}`);
+    return full;
+  });
   const nodePaths = collectNodePaths([figureDir, process.cwd(), SKILL]);
   const { esbuild, alias } = loadToolchain(nodePaths);
   const cssFiles = new Set();
@@ -410,8 +471,20 @@ export { React, renderToString, Entry };
 
   const ssrCode = ssrBuild.outputFiles[0].text;
   const problems = [];
+  const addProblem = (message) => {
+    const clean = String(message).trim();
+    if (clean && !problems.includes(clean)) problems.push(clean);
+  };
   const prevHook = globalThis.__anatomyReactProblem;
-  globalThis.__anatomyReactProblem = (problem) => problems.push(problem);
+  const prevConsoleError = console.error;
+  globalThis.__anatomyReactProblem = addProblem;
+  console.error = (...args) => {
+    const text = format(...args);
+    if (/Each child in a list should have a unique "key" prop/.test(text) && problems.some((item) => item.includes('unique "key" prop'))) {
+      return;
+    }
+    addProblem(text);
+  };
   let body = "";
   let exportName = "";
   try {
@@ -425,9 +498,10 @@ export { React, renderToString, Entry };
     body = renderToString(React.createElement(Component));
   } finally {
     globalThis.__anatomyReactProblem = prevHook;
+    console.error = prevConsoleError;
   }
 
-  for (const extra of css) cssFiles.add(resolve(extra));
+  for (const extra of resolvedExtraCss) cssFiles.add(extra);
   const extraCss = [...cssFiles].map((file) => readFileSync(file, "utf8")).join("\n");
 
   const clientEntry = `
@@ -498,7 +572,8 @@ async function main() {
   } catch (error) {
     usage(error.message);
   }
-  if (options.help || !options.target) usage();
+  if (options.help) usage();
+  if (!options.target) usage("missing target figure folder or .tsx file");
   try {
     const result = await buildReactPage(options);
     console.log("wrote", result.outPath);
