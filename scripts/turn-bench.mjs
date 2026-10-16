@@ -11,12 +11,19 @@ if (!argv.length || argv.includes("--help")) {
 The build module must export T (from turning()); if it also exports follow(values), every angle is mapped through it.`);
   process.exit(argv.length ? 0 : 1);
 }
-const take = (flag, fallback) => {
+const take = (flag, fallback, valid, need) => {
   const at = argv.indexOf(flag);
-  return at < 0 ? fallback : Number(argv[at + 1]);
+  if (at < 0) return fallback;
+  const text = argv[at + 1];
+  const value = text === undefined || text.trim() === "" ? NaN : Number(text);
+  if (!valid(value)) {
+    console.error(`turn-bench: ${flag} needs ${need}`);
+    process.exit(1);
+  }
+  return value;
 };
-const rounds = take("--rounds", 7);
-const unit = take("--unit", 1);
+const rounds = take("--rounds", 7, (value) => Number.isInteger(value) && value >= 1, "a whole number of at least 1");
+const unit = take("--unit", 1, (value) => Number.isFinite(value) && value > 0, "a number above 0");
 const mod = await import(pathToFileURL(resolve(argv[0])).href);
 const T = mod.T;
 const follow = mod.follow ?? ((values) => values);

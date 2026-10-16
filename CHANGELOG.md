@@ -15,6 +15,7 @@ All notable changes to Anatomy are recorded here. The format follows [Keep a Cha
 
 ### Fixed
 
+- `turn-bench.mjs` rejects a `--rounds` that is not a whole number of at least 1 and a `--unit` that is not above 0 before it loads the build. `--rounds 0` or `--rounds abc` ran no rounds and then crashed taking the median of nothing.
 - Line-end audits follow cubic and quadratic strokes with a bounded screen-space approximation, so lines attached between curve samples are not reported as loose.
 
 - `drive.mjs` waits for the page to load (up to 10 s) before it runs the first action, and gives up with an error when Chrome leaves a request unanswered for 60 s instead of hanging, as `capture.mjs` now does.
