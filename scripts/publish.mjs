@@ -95,7 +95,11 @@ function detectPages(source, files, given) {
     const named = given.filter(Boolean);
     for (const page of named) if (!files.includes(page)) throw new Error(`page ${page} not found in ${source}; build the figure first`);
     const pages = {};
-    for (const page of named) pages[themeOf(source, page) === "light" ? "light" : themeOf(source, page) === "dark" ? "dark" : page.replace(/\.html$/, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 24)] = page;
+    for (const page of named) {
+      const theme = themeOf(source, page);
+      const key = theme === "light" ? "light" : theme === "dark" ? "dark" : slugOf(page);
+      pages[Object.hasOwn(pages, key) ? freeSlug(pages, slugOf(page)) : key] = page;
+    }
     return pages;
   }
   const pairs = html.filter((file) => !file.endsWith("-light.html") && html.includes(file.replace(/\.html$/, "-light.html")));
@@ -106,6 +110,12 @@ function detectPages(source, files, given) {
 }
 
 const themeOf = (source, page) => (readFileSync(join(source, page), "utf8").match(/<body[^>]*\bdata-theme="([a-z-]+)"/) ?? [])[1] ?? "";
+const slugOf = (page) => page.replace(/\.html$/, "").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 24);
+const freeSlug = (pages, slug) => {
+  let key = slug;
+  for (let n = 2; Object.hasOwn(pages, key); n++) key = `${slug}-${n}`;
+  return key;
+};
 
 function detectKind(text) {
   const webgl = /getContext\(\s*["']webgl2?["']|\bGLSL_ISO\b|\bglLayer\b/.test(text);

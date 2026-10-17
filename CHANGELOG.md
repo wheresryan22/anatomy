@@ -32,6 +32,7 @@ All notable changes to Anatomy are recorded here. The format follows [Keep a Cha
 - Start headless Chrome on Windows from an elevated terminal: `capture.mjs`, `drive.mjs` and `turn-check.mjs` pass `--do-not-de-elevate` there. Chrome otherwise relaunches itself without the elevation, the process the script started exits with code 0, and the check stops with `Chrome exited before startup: 0` while the relaunched browser stays running.
 - Resolve the current React readout target on every write so replaced readouts and anchors do not leave updates on detached elements.
 - Reject drive `turn` and `orbit` actions when the page has no callable 3D turn controller, instead of reporting an unchanged figure as a successful turn.
+- `publish.mjs --pages` no longer silently drops a page when two listed pages share a theme: the colliding page falls back to its filename slug (with a numeric suffix if needed), so both pages are recorded under distinct keys instead of the later overwriting the earlier ([#89](https://github.com/wheresryan22/anatomy/issues/89)).
 - Await asynchronous `until` conditions without treating the promise itself as success, while enforcing the wait deadline.
 - Capture measures the current figure before every screenshot, including moved, resized and timed zoom crops.
 - `publish.mjs --submit` makes the fork again with gh 2.101 and later, which refuse `--remote` when a repository is named; gh never adds a remote in that case, so the flag is gone (#53).

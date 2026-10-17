@@ -103,6 +103,35 @@ test("--submit: people who can push get a branch; everyone else a fork made for 
   assert.ok(guest.steps.some((s) => s.git?.[0] === "add" && s.git.at(-1) === "figures/octo-cat/token-bucket"), "only the figure's folder is added");
 });
 
+test("--pages records two same-theme pages under distinct keys instead of dropping one (issue #89)", () => {
+  const repo = gallery();
+  const source = mkdtempSync(join(tmpdir(), "anatomy-fig-"));
+  try {
+    const dark = (name) => `<!doctype html><html><body data-theme="dark"><h1>${name}</h1></body></html>\n`;
+    writeFileSync(join(source, "main.html"), dark("main"));
+    writeFileSync(join(source, "alt.html"), dark("alt"));
+    writeFileSync(
+      join(source, "build.mjs"),
+      `import { writeFileSync } from "node:fs";\n` +
+        `import { dirname, join } from "node:path";\n` +
+        `import { fileURLToPath } from "node:url";\n` +
+        `const dir = dirname(fileURLToPath(import.meta.url));\n` +
+        `for (const name of ["main.html", "alt.html"]) writeFileSync(join(dir, name), "<!doctype html><html><body data-theme=\\"dark\\"><h1>" + name + "</h1></body></html>\\n");\n`
+    );
+    const { dest, figure } = publish({
+      source, into: repo, id: "two-dark-pages", title: "Two dark pages", prompt: "x",
+      author: "octo-cat", agent: "Codex", license: "MIT", build: "build.mjs",
+      tags: [], date: "2026-10-18", noPreview: true, pages: ["main.html", "alt.html"],
+    });
+    assert.deepEqual(figure.pages, { dark: "src/main.html", alt: "src/alt.html" });
+    assert.ok(!existsSync(join(dest, "src", "main.html")), "the overwritten page must not ship as a plain source file");
+    assert.ok(!existsSync(join(dest, "src", "alt.html")), "built pages are inlined into figure.json, then removed");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+    rmSync(source, { recursive: true, force: true });
+  }
+});
+
 test("a failed --force publish leaves the existing figure as it was", () => {
   const repo = gallery();
   const common = { source: join(SKILL, "examples", "dial-indicator"), into: repo, id: "dial-indicator", title: "Dial indicator", prompt: "/anatomy a dial indicator", author: "octo-cat", agent: "Codex", license: "MIT", build: "build.mjs", tags: [], date: "2026-10-12", noPreview: true };
