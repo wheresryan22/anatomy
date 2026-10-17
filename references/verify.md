@@ -8,6 +8,8 @@ Look at the figure the way a demanding reviewer would, before anyone else does. 
 ```sh
 node scripts/capture.mjs page.html --out shots/desk.png                         # desktop 1440, dpr 2
 node scripts/capture.mjs page.html --out shots/phone.png --width 390            # phone
+node scripts/capture.mjs page.html --out shots/words.png --select .iso-figure  # card, legend and caption
+node scripts/capture.mjs page-light.html --out shots/words-light-phone.png --select .iso-figure --width 390
 node scripts/capture.mjs page.html --out shots/hover.png --hover 0.7,0.5        # pointer at 70% across
 node scripts/capture.mjs page.html --out shots/tour.png --times 1200,2400,3600  # motion: extra shots over time
 node scripts/capture.mjs page.html --out shots/keys.png --key ArrowRight,ArrowRight
@@ -16,6 +18,8 @@ node scripts/capture.mjs page.html --out shots/still.png --reduced              
 node scripts/capture.mjs http://localhost:3000/docs --select "figure:nth-of-type(3) .iso-plate"   # one figure on a dev-server page
 ```
 `--select` takes any CSS selector; by default it clips to the first `.iso-plate`. Each `--times` delay counts from the first shot, so `1200,2400,3600` shoots at about 1.2, 2.4 and 3.6 s after it (a capture takes 60–200 ms, so delays closer together than that run late), saved as `name-<ms>.png`. `--key` sends the same key codes as `drive.mjs` (`7` as `Digit7`, `.` as `Period`; write a comma as `Comma`, since the list is comma separated). The other options are `--height` (1000), `--scale` (2), `--wait` (2500 ms before the first shot), `--zoom-scale` (4) and `--theme dark|light`. Read every PNG you make: open it and look.
+
+The default crop leaves out the legend and caption: `plateHtml` and React's `Plate` put them outside `.iso-plate`, inside `.iso-figure`. Capture `.iso-figure` at desktop and 390 px in both themes as well. Check that the whole caption is readable, the legend wraps without overlap, and the words explain the state shown. On a page with several figures, select the intended wrapper, such as `#spring-figure`; keep `.iso-plate` for close-ups whose coordinates are measured from the card.
 
 Both scripts start Chrome with WebGL on (`--enable-unsafe-swiftshader --ignore-gpu-blocklist`), so shaders show in `capture.mjs` stills too. Use `drive.mjs` for anything that has to be timed or slowed down.
 
@@ -276,6 +280,7 @@ window.requestAnimationFrame = (callback) => raf((now) => {
 
 **Card and words**
 - [ ] `Fig n` / title / hint / live readout are in the corners, with legend keys and a caption under the card.
+- [ ] Full `.iso-figure` captures at desktop and 390 px, in both themes, include the whole legend and caption. Their text wraps without overlap and describes the state shown; a card-only crop cannot prove this.
 - [ ] Every number is true and comes from the model. The readout changes as things move, and its words and numbers come from the same instant: a phase word from the model next to a number from a lagging gauge reads `relief 85 bar` before the valve has cracked.
 - [ ] Text the machine displays fits its window at its widest string and is clipped to it.
 

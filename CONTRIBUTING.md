@@ -98,6 +98,13 @@ node scripts/capture.mjs examples/ripple-tank/ripple-tank-light.html --out shots
 node scripts/capture.mjs examples/ripple-tank/ripple-tank-light.html --out shots/still.png --reduced
 ```
 
+The default crop excludes the legend and caption below the card. Also capture the whole `.iso-figure` at desktop and 390 px in both themes, and read the text for clipping, overlap and agreement with the picture:
+
+```sh
+node scripts/capture.mjs examples/ripple-tank/ripple-tank-light.html --select .iso-figure --out shots/words-light.png
+node scripts/capture.mjs examples/ripple-tank/ripple-tank-light.html --select .iso-figure --width 390 --out shots/words-light-phone.png
+```
+
 **Drive.** Scripted sessions: move, click, key, wait for a phase, and contact sheets slowed down to catch pops in a shader. `--no-webgl` checks the SVG fallback.
 
 ```sh
