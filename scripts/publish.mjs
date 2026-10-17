@@ -9,7 +9,7 @@ const SKILL = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const SOURCE_TYPES = [".mjs", ".js", ".css", ".html", ".json", ".md", ".txt", ".svg"];
 const SKIP_DIRS = ["node_modules", "shots", ".git"];
 const ID = /^[a-z0-9]+(-[a-z0-9]+)*$/;
-const AGENTS = ["Claude Code", "OpenCode", "Codex", "Antigravity", "Other"];
+const AGENTS = ["Claude Code", "OpenCode", "Codex", "Antigravity", "MiniMax Code", "Other"];
 const LICENSES = ["MIT", "CC-BY-4.0"];
 const KINDS = ["SVG", "SVG + WebGL", "SVG + 3D", "SVG + WebGL + 3D"];
 
@@ -21,7 +21,7 @@ function usage(message) {
   console.log(`Copy a figure into a local clone of the community gallery, ready for a pull request.
 
   node scripts/publish.mjs <figure folder> --into <anatomy-community clone> --id <kebab-id> --title "..." --prompt "..." --author <github user>
-      [--agent "Claude Code"|OpenCode|Codex|Antigravity|Other] [--model "..."] [--minutes 45] [--tokens 1.2M] [--no-session]
+      [--agent "Claude Code"|OpenCode|Codex|Antigravity|"MiniMax Code"|Other] [--model "..."] [--minutes 45] [--tokens 1.2M] [--no-session]
       [--license MIT|CC-BY-4.0] [--tags a,b]
       [--build build.mjs] [--pages a.html,b.html] [--kind "SVG + WebGL"] [--audit] [--no-preview] [--force]
       [--submit [--yes] [--dry-run] [--upstream owner/repo]]

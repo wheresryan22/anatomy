@@ -89,6 +89,23 @@ test("publisher accepts only the gallery's supported licenses", () => {
   }
 });
 
+test('publisher accepts "MiniMax Code" as --agent', () => {
+  const repo = gallery();
+  try {
+    const id = "minimax-agent";
+    const result = spawnSync(process.execPath, [
+      join(SKILL, "scripts", "publish.mjs"), join(SKILL, "examples", "dial-indicator"),
+      "--into", repo, "--id", id, "--title", "Dial indicator", "--prompt", "/anatomy a dial indicator",
+      "--author", "Octo-Cat", "--agent", "MiniMax Code", "--no-preview",
+    ], { encoding: "utf8" });
+    assert.equal(result.status, 0, result.stderr);
+    const figure = JSON.parse(readFileSync(join(repo, "figures", "octo-cat", id, "figure.json"), "utf8"));
+    assert.equal(figure.agent, "MiniMax Code");
+  } finally {
+    rmSync(repo, { recursive: true, force: true });
+  }
+});
+
 import { submitPlan } from "./publish.mjs";
 
 test("--submit: people who can push get a branch; everyone else a fork made for them", () => {

@@ -18,7 +18,7 @@ Publish only when the user asks to share or publish a figure. Never send anythin
    ```sh
    node <skill>/scripts/publish.mjs <figure folder> --into <clone> --id <kebab-id> \
      --title "..." --author <github user> --prompt "..." \
-     [--agent "Claude Code"|OpenCode|Codex|Antigravity|Other] --model "..." [--minutes 45] [--tokens 1.2M] \
+     [--agent "Claude Code"|OpenCode|Codex|Antigravity|"MiniMax Code"|Other] --model "..." [--minutes 45] [--tokens 1.2M] \
      [--license MIT|CC-BY-4.0] \
      [--tags a,b] [--audit] [--pages a.html,b.html] --submit --dry-run
    ```
