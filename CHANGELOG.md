@@ -15,6 +15,7 @@ All notable changes to Anatomy are recorded here. The format follows [Keep a Cha
 
 ### Fixed
 
+- `roundedPlan` no longer repeats a vertex when the corner radius fills a side (a pill or circle, or a radius clamped to half the side). The repeated vertex was a zero-length edge that counted as facing away, so `slabOf` and `extrude` split the outline, crease and side shading into extra pieces.
 - Line-end audits follow cubic and quadratic strokes with a bounded screen-space approximation, so lines attached between curve samples are not reported as loose.
 
 - `drive.mjs` waits for the page to load (up to 10 s) before it runs the first action, and gives up with an error when Chrome leaves a request unanswered for 60 s instead of hanging, as `capture.mjs` now does.

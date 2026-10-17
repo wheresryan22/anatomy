@@ -92,9 +92,14 @@ export function roundedPlan({ x, y, w, d, r }: Plan, steps = 8): Plane[] {
     const count = radius > 0 ? steps : 0;
     for (let step = 0; step <= count; step++) {
       const angle = (start + (count ? (90 * step) / count : 45)) * RADIANS;
-      out.push([cx + radius * Math.cos(angle), cy + radius * Math.sin(angle)]);
+      const point: Plane = [cx + radius * Math.cos(angle), cy + radius * Math.sin(angle)];
+      const last = out[out.length - 1];
+      if (!last || Math.hypot(point[0] - last[0], point[1] - last[1]) > 1e-9) out.push(point);
     }
   }
+  const first = out[0];
+  const end = out[out.length - 1];
+  if (out.length > 1 && Math.hypot(first[0] - end[0], first[1] - end[1]) <= 1e-9) out.pop();
   return out;
 }
 
