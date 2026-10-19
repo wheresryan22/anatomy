@@ -5,9 +5,26 @@ function lineEnds({ select = null, tolerance = 1, root: rootSlack = 2, mark = 7,
   const style = document.createElement("style");
   style.textContent = `${select || ".iso-plate"} *{pointer-events:none!important}${select || ".iso-plate"} svg,${select || ".iso-plate"} svg *{pointer-events:visiblePainted!important}`;
   document.head.append(style);
+  const outsideDefs = (el) => !el.closest("defs, clipPath, mask, pattern, marker, symbol");
+  const expanded = [];
+  const targetOf = (use) => document.getElementById(use.href.baseVal.slice(1));
+  for (let pass = 0; pass < 8; pass++) {
+    const uses = [...plate.querySelectorAll("use")].filter((use) => outsideDefs(use) && targetOf(use) && targetOf(use).localName !== "symbol");
+    if (!uses.length) break;
+    for (const use of uses) {
+      const copy = document.createElementNS("http://www.w3.org/2000/svg", "g");
+      for (const { name, value } of use.attributes) if (!["href", "xlink:href", "x", "y", "width", "height", "transform"].includes(name)) copy.setAttribute(name, value);
+      copy.setAttribute("transform", `${use.getAttribute("transform") || ""} translate(${use.x.baseVal.value} ${use.y.baseVal.value})`);
+      const content = targetOf(use).cloneNode(true);
+      for (const node of [content, ...content.querySelectorAll("[id]")]) node.removeAttribute("id");
+      copy.append(content);
+      use.replaceWith(copy);
+      expanded.push([copy, use]);
+    }
+  }
   const skipClass = ["iso-edge", "iso-bevel", "iso-crease", "tb-edge"];
   const svgs = [...(plate.matches("svg") ? [plate] : []), ...plate.querySelectorAll("svg")];
-  const shapes = svgs.flatMap((svg) => [...svg.querySelectorAll("path, line, polyline, polygon, circle, ellipse, rect")]).filter((el) => !el.closest("defs, clipPath, mask, pattern, marker, symbol"));
+  const shapes = svgs.flatMap((svg) => [...svg.querySelectorAll("path, line, polyline, polygon, circle, ellipse, rect")]).filter(outsideDefs);
   const opacityOf = (el) => {
     let alpha = 1;
     for (let node = el; node && node.nodeType === 1; node = node.parentElement) {
@@ -303,6 +320,7 @@ function lineEnds({ select = null, tolerance = 1, root: rootSlack = 2, mark = 7,
     }
   }
   style.remove();
+  for (const [copy, use] of expanded.reverse()) copy.replaceWith(use);
   problems.sort((a, b) => b.gap - a.gap);
   if (show) {
     const ns = "http://www.w3.org/2000/svg";
