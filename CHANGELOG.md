@@ -16,6 +16,7 @@ All notable changes to Anatomy are recorded here. The format follows [Keep a Cha
 
 ### Fixed
 
+- `A.settle` orders a tube thinner than three grid cells (under 0.75 px at the default step) against the shapes that overlap it. Such a tube used to vanish from the depth measurement, so a wire starting behind a plate could keep a key after the plate and be drawn over it, and the audit passed.
 - Line-end audits follow cubic and quadratic strokes with a bounded screen-space approximation, so lines attached between curve samples are not reported as loose.
 
 - `drive.mjs` waits for the page to load (up to 10 s) before it runs the first action, and gives up with an error when Chrome leaves a request unanswered for 60 s instead of hanging, as `capture.mjs` now does.

@@ -449,7 +449,13 @@ export function prefixStates(order, { shares = [0.25, 0.5, 0.75, 1] } = {}) {
 }
 
 function rasterOf(item, cam, step, offset) {
-  const shapes = item.shapes.map((shape) => moved(shape, offset));
+  const reach = (step * 1.5) / cam.k;
+  const widened = (shape) => {
+    if (shape.kind !== "tube" || Math.max(...shape.radii) >= reach) return shape;
+    const points = shape.points.map((p, index) => sub3(p, mul3(cam.V, reach - shape.radii[index])));
+    return { ...shape, points, radii: shape.radii.map(() => reach), _b: undefined };
+  };
+  const shapes = item.shapes.map((shape) => widened(moved(shape, offset)));
   const flat = (p) => [cam.origin[0] + dot3(p, cam.R) * cam.k, cam.origin[1] + dot3(p, cam.D) * cam.k];
   const boxes = shapes.map((shape) => screenBox(shape, cam, [0, 0, 0]));
   const guides = shapes.map((shape) => {
