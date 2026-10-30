@@ -1151,7 +1151,7 @@ export function cut(points, from, to) {
       const t0 = Math.max(0, (from - start) / (length || 1));
       const t1 = Math.min(1, (to - start) / (length || 1));
       if (!out.length) out.push(lerp3(a, b, t0));
-      out.push(lerp3(a, b, t1));
+      if (Math.min(to, end) > Math.max(from, start)) out.push(lerp3(a, b, t1));
     }
     walked = end;
   }
