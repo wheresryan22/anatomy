@@ -8,7 +8,12 @@ import { LINE_ENDS } from "./line-ends.mjs";
 
 if (typeof WebSocket === "undefined" && !process.execArgv.includes("--experimental-websocket")) {
   const child = spawn(process.execPath, ["--experimental-websocket", ...process.argv.slice(1)], { stdio: "inherit" });
-  child.on("exit", (code) => process.exit(code ?? 1));
+  for (const signal of ["SIGTERM", "SIGINT"]) process.on(signal, () => child.kill(signal));
+  child.on("exit", (code, signal) => {
+    if (!signal) process.exit(code ?? 1);
+    process.removeAllListeners(signal);
+    process.kill(process.pid, signal);
+  });
 } else {
   await main();
 }
@@ -132,16 +137,22 @@ async function main() {
     process.exit(1);
   }
   const profile = mkdtempSync(join(tmpdir(), "iso-drive-"));
-  const chrome = spawn(binary, ["--headless=new", ...(process.platform === "linux" ? ["--no-sandbox"] : []), ...(process.platform === "win32" ? ["--do-not-de-elevate"] : []), "--remote-debugging-port=0", `--user-data-dir=${profile}`, "--no-first-run", "--no-default-browser-check", "--hide-scrollbars", "--allow-file-access-from-files", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist", "about:blank"]);
-  const port = await chromePort(chrome, profile);
-  const finish = (code) => {
-    chrome.kill("SIGKILL");
-    try {
-      rmSync(profile, { recursive: true, force: true });
-    } catch {}
+  const chrome = spawn(binary, ["--headless=new", ...(process.platform === "linux" ? ["--no-sandbox"] : []), ...(process.platform === "win32" ? ["--do-not-de-elevate"] : []), "--remote-debugging-port=0", `--user-data-dir=${profile}`, "--no-first-run", "--no-default-browser-check", "--hide-scrollbars", "--allow-file-access-from-files", "--enable-unsafe-swiftshader", "--ignore-gpu-blocklist", "about:blank"], { detached: process.platform !== "win32" });
+  let stopping = false;
+  for (const signal of ["SIGTERM", "SIGINT"]) {
+    process.once(signal, async () => {
+      stopping = true;
+      await stopChrome(chrome, profile);
+      process.kill(process.pid, signal);
+    });
+  }
+  const finish = async (code) => {
+    if (stopping) return;
+    await stopChrome(chrome, profile);
     process.exit(code);
   };
   try {
+    const port = await chromePort(chrome, profile);
     const page = await (await fetch(`http://127.0.0.1:${port}/json/new?about:blank`, { method: "PUT" })).json();
     const socket = new WebSocket(page.webSocketDebuggerUrl);
     let id = 0;
@@ -326,7 +337,38 @@ async function main() {
     socket.close();
     finish(failed ? 1 : 0);
   } catch (error) {
+    if (stopping) return;
     console.error(error);
     finish(1);
   }
+}
+
+async function stopChrome(chrome, profile) {
+  if (process.platform === "win32") {
+    chrome.kill("SIGKILL");
+  } else {
+    try {
+      process.kill(-chrome.pid, "SIGKILL");
+    } catch {}
+    await processGroupGone(chrome.pid, 3000);
+  }
+  try {
+    rmSync(profile, { recursive: true, force: true });
+  } catch {}
+}
+
+function processGroupGone(group, patience) {
+  const deadline = Date.now() + patience;
+  return new Promise((done) => {
+    const check = () => {
+      try {
+        process.kill(-group, 0);
+      } catch {
+        return done(true);
+      }
+      if (Date.now() > deadline) return done(false);
+      setTimeout(check, 20);
+    };
+    check();
+  });
 }

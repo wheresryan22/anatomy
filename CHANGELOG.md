@@ -16,6 +16,7 @@ All notable changes to Anatomy are recorded here. The format follows [Keep a Cha
 
 ### Fixed
 
+- `drive.mjs` stops Chrome and all of its helper processes together and waits for them to be gone before it removes the profile folder, on a normal exit and when the run itself is terminated (a test's timeout, Ctrl-C), then exits by the same signal. A terminated run used to leave a headless Chrome running, and across a parallel `node --test` those piled up until every browser test timed out; a normal exit could leave a near-empty profile folder behind, written while Chrome was still shutting down.
 - Line-end audits follow cubic and quadratic strokes with a bounded screen-space approximation, so lines attached between curve samples are not reported as loose.
 
 - `drive.mjs` waits for the page to load (up to 10 s) before it runs the first action, and gives up with an error when Chrome leaves a request unanswered for 60 s instead of hanging, as `capture.mjs` now does.
