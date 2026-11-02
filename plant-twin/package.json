@@ -1,0 +1,14 @@
+{
+  "name": "plant-twin",
+  "private": true,
+  "type": "module",
+  "description": "Цифровой двойник цеха эпоксидных порошковых красок",
+  "scripts": {
+    "build": "node build.mjs",
+    "dev": "npx --yes http-server -p 8080 -c-1 .",
+    "export:unreal": "node tools/export-unreal.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.20.2"
+  }
+}

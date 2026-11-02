@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Цифровой двойник ЭПК</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="src/styles.css">
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+  "three-mesh-bvh": "https://cdn.jsdelivr.net/npm/three-mesh-bvh@0.7.6/build/index.module.js"
+} }
+</script>
+</head>
+<body>
+<!--APP-->
+<div id="app">
+  <header class="bar">
+    <div class="brand">
+      <svg viewBox="0 0 26 26" fill="none" stroke="currentColor" stroke-width="1.4" aria-hidden="true"><path d="M13 2.5 23 8.25v9.5L13 23.5 3 17.75v-9.5z"/><path d="M3 8.25 13 14l10-5.75M13 14v9.5"/><path d="M8 5.4l10 5.75v4.6" stroke-width="1"/></svg>
+      <div><b>Цех ЭПК</b><span>Цифровой двойник</span></div>
+    </div>
+    <nav class="tabs" role="tablist" aria-label="Разделы">
+      <button type="button" role="tab" id="tab-plant" aria-selected="true">Цех</button>
+      <button type="button" role="tab" id="tab-cap" aria-selected="false">Мощность и загрузка</button>
+    </nav>
+    <div class="kpis" id="kpis"></div>
+    <div class="sim">
+      <div class="clock"><strong id="clock" class="num">—</strong><small id="shift">—</small></div>
+      <button type="button" class="iconbtn" id="play" aria-label="Пауза"></button>
+      <select class="speed" id="speed" aria-label="Скорость симуляции">
+        <option value="1">×1</option><option value="10">×10</option><option value="60">×60 · 1 с = 1 мин</option>
+        <option value="300">×300</option><option value="1200">×1200</option><option value="3600">×3600 · 1 с = 1 ч</option>
+      </select>
+    </div>
+  </header>
+  <div class="body" id="body">
+    <aside class="side left" id="tree" aria-label="Реестр оборудования">
+      <header><div class="eyebrow">Реестр оборудования</div><h2>Участки и единицы</h2><input class="search" id="search" type="search" placeholder="Тег, модель или название" aria-label="Поиск оборудования"></header>
+      <div class="scroll" id="treeList"></div>
+    </aside>
+    <section class="stage" id="stage" aria-label="3D-модель цеха">
+      <div class="toolbar" id="toolbar"></div>
+      <div class="legend" id="legend"></div>
+      <div class="hint">ЛКМ вращение · ПКМ сдвиг · колесо масштаб · двойной клик к объекту · пробел пауза</div>
+      <div class="tip" id="tip" hidden></div>
+      <div class="walkhud" id="walkhud" hidden>
+        <div class="cross" aria-hidden="true"></div>
+        <div class="aim" id="aim" hidden></div>
+        <div class="walkbar">
+          <button type="button" class="btn primary" id="wExit">Выйти из прогулки</button>
+          <label class="spot"><span>Перейти</span><select id="wSpot" aria-label="Перейти к участку"></select></label>
+        </div>
+        <div class="walkstart" id="walkStart">Щёлкните по сцене, чтобы управлять взглядом мышью<br><small>WASD — ходьба · Shift — бег · пробел — прыжок · E — карточка станка · Esc — выход</small></div>
+        <canvas class="minimap" id="minimap" aria-label="Положение на плане цеха"></canvas>
+        <div class="stick" id="stick" aria-hidden="true"><i></i></div>
+      </div>
+      <div class="walkbusy" id="walkBusy" hidden>Подготовка прогулки: расчёт столкновений…</div>
+      <div class="mobile-tabs"><button type="button" id="mTree">Оборудование</button><button type="button" id="mInsp">Инспектор</button></div>
+      <div class="sheet" id="cap" hidden></div>
+      <div class="loading" id="loading"><div>Сборка цифрового двойника<div class="barline"><i></i></div></div></div>
+    </section>
+    <aside class="side right" id="insp" aria-label="Инспектор"><div class="scroll" id="inspBody"></div></aside>
+  </div>
+</div>
+<!--/APP-->
+<script type="module" src="src/main.js"></script>
+</body>
+</html>
