@@ -173,6 +173,7 @@ function t3Poses(groups, values) {
   for (let index = 0; index < groups.length; index++) {
     const g = groups[index];
     const v = get(g.name);
+    if (typeof g.parent === "number" && g.parent >= index) throw new Error(`turn: group "${g.name}" has parent index ${g.parent}, but a parent must come before its children (index ${index})`);
     let parent = g.parent === undefined || g.parent === null || g.parent < 0 ? null : list[g.parent];
     let po = parent ? groups[g.parent].origin : [0, 0, 0];
     let R = T3_EYE;
@@ -712,8 +713,6 @@ function t3EmitPrism(run, cam, f) {
       f.d[role] = t3Path(ring, n, true);
       f.q[role] = t3Level(sign * (F.a[0] * L[0] + F.a[1] * L[1] + F.a[2] * L[2]), T3_LB);
       let minor = Infinity;
-      let x0 = Infinity;
-      let x1 = -Infinity;
       for (let i = 0; i < n; i++) {
         const j = (i + 1) % n;
         const ex = ring[2 * j] - ring[2 * i];
@@ -728,8 +727,6 @@ function t3EmitPrism(run, cam, f) {
           if (v > hi2) hi2 = v;
         }
         minor = Math.min(minor, hi2 - lo2);
-        x0 = Math.min(x0, lo2);
-        x1 = Math.max(x1, hi2);
       }
       f.w[role] = minor < 0.4 ? Math.round(minor * 100) / 100 : -1;
     }
@@ -738,7 +735,6 @@ function t3EmitPrism(run, cam, f) {
     let crease = "";
     if (run.up) {
       if (i0 >= 0) {
-        const buf = t3Scratch("a", 0);
         let c = 0;
         const rim = t3Scratch("c", 2 * n + 4);
         for (let j = i0; j <= i1; j++) {
@@ -748,7 +744,6 @@ function t3EmitPrism(run, cam, f) {
           c++;
         }
         crease = t3Path(rim, c, false);
-        void buf;
       }
     } else {
       const capOn = [-aV > 1e-6, aV > 1e-6];
@@ -784,7 +779,6 @@ function t3EmitPrism(run, cam, f) {
     const lines = t3Lines;
     lines.d.length = 0;
     lines.alpha.length = 0;
-  lines.key.length = 0;
     lines.key.length = 0;
     const capSide = aV >= 0 ? 1 : 0;
     const s = capSide ? run.s1 : run.s0;
@@ -2490,7 +2484,6 @@ function t3EmitTube(run, cam, f) {
     const lines = t3Lines;
     lines.d.length = 0;
     lines.alpha.length = 0;
-  lines.key.length = 0;
     lines.key.length = 0;
     const V = cam.V;
     const m = cam.m;
@@ -2975,7 +2968,8 @@ function t3Order(layer, frames, cams, previous, stats, scene) {
             if (from < 0) break;
             x = from;
           }
-          return dropped ? 1 : 0;
+          if (dropped) return 1;
+          continue;
         }
         via[w] = e;
         mark[w] = 1;
@@ -3331,14 +3325,24 @@ function t3Mount(stage, data, { onHold = null, onFrame = null, follow = null, pa
     anchor: (name, point, direction) => t3Anchor(scene, cams, name, point, direction),
     destroy: () => {
       if (observer) observer.disconnect();
-      if (typeof window !== "undefined" && window.__isoTurn && window.__isoTurn.controller === controller) delete window.__isoTurn;
+      if (typeof window !== "undefined") {
+        const all = window.__isoTurns;
+        if (all) {
+          const at = all.findIndex((entry) => entry.controller === controller);
+          if (at >= 0) all.splice(at, 1);
+        }
+        if (window.__isoTurn && window.__isoTurn.controller === controller) {
+          if (all && all.length) window.__isoTurn = all[all.length - 1];
+          else delete window.__isoTurn;
+        }
+      }
     },
   };
   const hold = () => {
     if (onHold) onHold();
   };
   if (typeof window !== "undefined") {
-    window.__isoTurn = {
+    const entry = (window.__isoTurn = {
       controller,
       set(next) {
         hold();
@@ -3364,7 +3368,8 @@ function t3Mount(stage, data, { onHold = null, onFrame = null, follow = null, pa
         hold();
         return scene.layers.map((layer) => layer.name);
       },
-    };
+    });
+    (window.__isoTurns ??= []).push(entry);
   }
   render();
   return controller;
