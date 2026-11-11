@@ -8,7 +8,7 @@ A figure is alive when its mechanism moves the way the real thing would: a carri
 - **Real springs where the subject is springy.** Use stiffness and damping from the real model, sub-stepped about 240 times a second for stability. Snap to the target once both error and velocity fall below 5e-4.
 - **One loop per figure.** A single `tick(dt)` updates the model, then writes the DOM through refs: `setAttribute("transform" | "d")`, `textContent`, `dataset`. Don't re-render React per frame.
 - **Stop when settled or offscreen.** Use an `IntersectionObserver` with rootMargin `120px 0px`, and read the newest entry (`entries[entries.length - 1]`): when the stage leaves and comes back between two callbacks, one callback delivers both entries oldest first, and reading the first one leaves the figure frozen on screen. Stop the loop once everything has reached its target.
-- **Reduced motion.** When `prefers-reduced-motion: reduce` is set, jump to targets with no tour, flow or pulse. The figure must still respond to input.
+- **Reduced motion.** When `prefers-reduced-motion: reduce` is set, jump to targets with no tour, flow or pulse. The figure must still respond to input. When reduced motion is enabled during an in-flight gesture, tour or fade, immediately settle active loops to their target, clear pending timers, and draw the final state. If continuous playback is explicitly selected while reduced motion is active, complete the remaining finite steps without animation.
 - **Idle tour.** When nobody is interacting, play a scripted loop after about 1.4 s that shows the point of the figure. Pause it on hover, focus or press, and resume about 3.6 s after the last interaction. The tour drives the same targets the user would.
 - **Readout updates live** from the same model, in true units and short: `block 2 · reads 14.0 px`, `120.0 × 32.0 · lean 10.6 px`. Read it from where the parts are, not from the target: the Raptor says `taking apart` or `closing up` while any spring is moving or pending, and only then `apart · 11 assemblies` or `1,630 kg · cold`. Take a phase word and the number beside it from the same instant of the same source: a blind-test bench printed `end of stroke · relief 85 bar` (the word from the model, the number from a gauge needle lagging 0.25 s behind it) although its relief valve cracks at 92, and `idle · 44 bar` just after retracting.
 
@@ -33,11 +33,22 @@ function tick(now) {
   if (touring) { clock += dt; target = tourAt(clock); }
   x = calm ? target : x + (target - x) * (1 - Math.exp(-dt / 0.28));
   springTo(tip, heightUnder(x), dt, 420, 26, calm);
-  draw();                                   // setAttribute on refs, readout.textContent = …
+  draw();
   const settled = !touring && x === target && tip.rate === 0;
   frame = visible && !settled ? requestAnimationFrame(tick) : 0;
 }
 const run = () => { if (!frame && visible) { last = 0; frame = requestAnimationFrame(tick); } };
+function finishMotion() {
+  cancelAnimationFrame(frame);
+  frame = 0;
+  touring = false;
+  x = target;
+  tip.at = heightUnder(x);
+  tip.rate = 0;
+  draw();
+}
+still.addEventListener("change", () => { if (still.matches) finishMotion(); });
+if (still.matches) finishMotion();
 new IntersectionObserver((entries) => { visible = entries[entries.length - 1].isIntersecting; if (visible) run(); }, { rootMargin: "120px 0px" }).observe(stage);
 ```
 `examples/dial-indicator/build.mjs` contains a complete version, with the tour, pointer mapping and keyboard stops.

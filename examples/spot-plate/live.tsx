@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { IsoFigure } from "../../kit/react/draw";
-import { asksForStillness, useReadout } from "../../kit/react/live";
+import { useReadout, useStillness } from "../../kit/react/live";
 import { keyOf, rowsOf, type GlassShape, type RowShape } from "./drops";
 import { fanOf, type FanPose } from "./fan";
 import { HEIGHT, MERGE, MERGE_LEAST, MERGE_MOST, MERGE_STEP, ROWS, WIDTH, mergeAtX, readoutOf, roundMerge, spokenOf } from "./rig";
@@ -115,6 +115,7 @@ export function LiquidLive({ label, back, deck, front }: Props) {
   const [visible, setVisible] = React.useState(false);
   const [idle, setIdle] = React.useState(true);
   const [poke, setPoke] = React.useState(0);
+  const still = useStillness();
 
   const rows = React.useMemo(() => rowsOf(quant), [quant]);
   const value = roundMerge(quant);
@@ -154,7 +155,7 @@ export function LiquidLive({ label, back, deck, front }: Props) {
       const next = Math.min(MERGE_MOST, Math.max(MERGE_LEAST, merge));
       ease.current = pace;
       goal.current = next;
-      if (asksForStillness()) {
+      if (still) {
         stop();
         lead.current = next;
         shown.current = next;
@@ -163,8 +164,17 @@ export function LiquidLive({ label, back, deck, front }: Props) {
       }
       run();
     },
-    [draw, run, stop],
+    [draw, run, stop, still],
   );
+
+  React.useEffect(() => {
+    if (still) {
+      stop();
+      lead.current = goal.current;
+      shown.current = goal.current;
+      draw(goal.current);
+    }
+  }, [still, draw, stop]);
 
   React.useEffect(() => stop, [stop]);
 
@@ -198,7 +208,7 @@ export function LiquidLive({ label, back, deck, front }: Props) {
   const touring = visible && idle && !engaged;
 
   React.useEffect(() => {
-    if (!touring || asksForStillness()) return;
+    if (!touring || still) return;
     let timer = 0;
     let step = 0;
     const next = () => {
@@ -209,7 +219,7 @@ export function LiquidLive({ label, back, deck, front }: Props) {
     };
     timer = window.setTimeout(next, TOUR_FIRST);
     return () => window.clearTimeout(timer);
-  }, [touring, aim]);
+  }, [touring, still, aim]);
 
   const mergeAt = (clientX: number) => {
     const svg = root.current?.querySelector("svg");

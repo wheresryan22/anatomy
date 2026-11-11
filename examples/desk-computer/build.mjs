@@ -358,7 +358,24 @@ function takeOver(switching = false) {
   clearTimeout(idleTimer);
   idleTimer = setTimeout(() => { if (still.matches) return; touring = true; line = ""; setPower(1); write(); run(); }, 9000);
 }
+function finishMotion() {
+  cancelAnimationFrame(frame);
+  frame = 0;
+  clearTimeout(idleTimer);
+  touring = false;
+  powerClock = 9;
+  for (const i of active) {
+    keyState[i].held = 0;
+    keyState[i].at = 0;
+    keyEls[i].setAttribute("transform", "translate(0 0)");
+    keyEls[i].removeAttribute("data-down");
+  }
+  active.clear();
+  crtFrame();
+}
 new IntersectionObserver((entries) => { visible = entries[entries.length - 1].isIntersecting; if (visible) run(); }, { rootMargin: "120px 0px" }).observe(stage);
+still.addEventListener("change", () => { if (still.matches) finishMotion(); });
+if (still.matches) finishMotion();
 stage.addEventListener("keydown", (event) => {
   if (event.metaKey || event.ctrlKey || event.altKey) return;
   const key = event.key;

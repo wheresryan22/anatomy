@@ -2,7 +2,7 @@
 
 import * as React from "react";
 import { IsoFigure } from "../../kit/react/draw";
-import { asksForStillness, useReadout } from "../../kit/react/live";
+import { useReadout, useStillness } from "../../kit/react/live";
 import { frameOf, type Frame } from "./pose";
 import { HALF, REST, memberAt, one, poseOf, readoutOf, settled, sizeText, step, type Member, type Pose } from "./rig";
 import { EX, FINGER_MOST, GRAB_MOST, HEIGHT, HOVER, PROBE_HOME, PROBE_MAX, PROBE_MIN, WIDTH, at } from "./view";
@@ -175,6 +175,7 @@ export function StretchLive(props: Props) {
   const [visible, setVisible] = React.useState(false);
   const [idle, setIdle] = React.useState(true);
   const [poke, setPoke] = React.useState(0);
+  const still = useStillness();
 
   const rest = React.useMemo(() => frameOf(REST, 0, PROBE_HOME, PROBE_HOME, HOVER, PROBE_HOME), []);
 
@@ -216,7 +217,7 @@ export function StretchLive(props: Props) {
     const tick = (now: number) => {
       const dt = last.current ? Math.min((now - last.current) / 1000, MOST_DT) : 1 / 60;
       last.current = now;
-      const calm = asksForStillness();
+      const calm = still;
       if (script.current) {
         clock.current += dt;
         grip(script.current(clock.current));
@@ -272,12 +273,24 @@ export function StretchLive(props: Props) {
   const touring = visible && idle && !engaged;
 
   React.useEffect(() => {
+    if (still) {
+      script.current = null;
+      stop();
+      finger.current = hand.current.finger;
+      lift.current = hand.current.held ? 0 : 1;
+      const pulled = hand.current.held ? finger.current - hand.current.grab : 0;
+      step(member.current, hand.current.held, pulled, 0, true);
+      draw();
+    }
+  }, [still, draw, stop]);
+
+  React.useEffect(() => {
     if (!visible) {
       script.current = null;
       stop();
       return;
     }
-    if (touring && !asksForStillness()) {
+    if (touring && !still) {
       const timer = window.setTimeout(
         () => {
           clock.current = 0;
@@ -297,7 +310,7 @@ export function StretchLive(props: Props) {
       return;
     }
     steer({ held: false, grab: hand.current.grab, finger: hovering ? hand.current.finger : PROBE_HOME });
-  }, [visible, touring, hovering, run, steer, stop]);
+  }, [visible, touring, still, hovering, run, steer, stop]);
 
   const xAt = (clientX: number) => {
     const svg = root.current?.querySelector("svg");

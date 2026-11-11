@@ -832,20 +832,37 @@ function tick(now) {
   last = now;
   const calm = still.matches;
   if (touring) { clock += dt; target = tourAt(clock); }
-  x = calm ? target : x + (target - x) * (1 - Math.exp(-dt / 0.28));
-  if (Math.abs(target - x) < 0.01) x = target;
-  const want = heightUnder(x);
-  const stiff = 420, drag = calm ? 2 * Math.sqrt(420) : 26;
-  for (let i = 0; i < 4; i++) { tip.rate += ((want - tip.at) * stiff - tip.rate * drag) * dt / 4; tip.at += tip.rate * dt / 4; }
-  if (Math.abs(want - tip.at) < 0.005 && Math.abs(tip.rate) < 0.005) { tip.at = want; tip.rate = 0; }
+  if (calm) {
+    x = target;
+    tip.at = heightUnder(x);
+    tip.rate = 0;
+  } else {
+    x = x + (target - x) * (1 - Math.exp(-dt / 0.28));
+    if (Math.abs(target - x) < 0.01) x = target;
+    const want = heightUnder(x);
+    const stiff = 420, drag = 26;
+    for (let i = 0; i < 4; i++) { tip.rate += ((want - tip.at) * stiff - tip.rate * drag) * dt / 4; tip.at += tip.rate * dt / 4; }
+    if (Math.abs(want - tip.at) < 0.005 && Math.abs(tip.rate) < 0.005) { tip.at = want; tip.rate = 0; }
+  }
   draw();
-  const settled = !touring && x === target && tip.rate === 0 && tip.at === want;
+  const settled = !touring && x === target && tip.rate === 0 && tip.at === heightUnder(x);
   frame = visible && !settled ? requestAnimationFrame(tick) : 0;
 }
 const run = () => { if (!frame && visible) { last = 0; frame = requestAnimationFrame(tick); } };
 const steer = (next) => { touring = false; target = clamp(next, REACH[0], REACH[1]); clearTimeout(idleTimer); idleTimer = setTimeout(() => { touring = !still.matches; clock = 0; run(); }, 3600); run(); };
+function finishMotion() {
+  cancelAnimationFrame(frame);
+  frame = 0;
+  clearTimeout(idleTimer);
+  touring = false;
+  x = target;
+  tip.at = heightUnder(x);
+  tip.rate = 0;
+  draw();
+}
 new IntersectionObserver((entries) => { visible = entries[entries.length - 1].isIntersecting; if (visible) run(); }, { rootMargin: "120px 0px" }).observe(stage);
-if (still.matches) touring = false;
+still.addEventListener("change", () => { if (still.matches) finishMotion(); });
+if (still.matches) finishMotion();
 stage.addEventListener("pointermove", (event) => {
   const box = svg.getBoundingClientRect();
   const share = clamp(((event.clientX - box.left) / box.width - 0.25) / 0.5, 0, 1);
