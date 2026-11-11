@@ -16,6 +16,8 @@ All notable changes to Anatomy are recorded here. The format follows [Keep a Cha
 
 ### Fixed
 
+- `print.mjs` also looks for Chrome in the Windows Playwright cache (`%LOCALAPPDATA%\ms-playwright`), matching `capture.mjs`, `drive.mjs` and `turn-check.mjs`; a Windows machine with only Playwright's Chromium installed could print a sheet with every other script but not this one.
+
 - Line-end audits follow cubic and quadratic strokes with a bounded screen-space approximation, so lines attached between curve samples are not reported as loose.
 
 - `drive.mjs` waits for the page to load (up to 10 s) before it runs the first action, and gives up with an error when Chrome leaves a request unanswered for 60 s instead of hanging, as `capture.mjs` now does.
