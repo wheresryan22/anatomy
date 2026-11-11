@@ -854,7 +854,20 @@ function tick(now) {
 }
 const run = () => { if (!frame && visible) { last = 0; frame = requestAnimationFrame(tick); } };
 const press = (down) => { touring = false; target = down ? 1 : 0; clearTimeout(idleTimer); if (!down) idleTimer = setTimeout(() => { touring = !still.matches; clock = 0; run(); }, 4000); run(); };
+function finishMotion() {
+  cancelAnimationFrame(frame);
+  frame = 0;
+  clearTimeout(idleTimer);
+  touring = false;
+  pos = target;
+  rate = 0;
+  on = pos > 0.985;
+  glowAt = on ? 1 : 0;
+  draw();
+}
 new IntersectionObserver((entries) => { visible = entries[entries.length - 1].isIntersecting; if (visible) run(); }, { rootMargin: "120px 0px" }).observe(stage);
+still.addEventListener("change", () => { if (still.matches) finishMotion(); });
+if (still.matches) finishMotion();
 stage.addEventListener("pointerdown", (event) => { held = true; stage.setPointerCapture?.(event.pointerId); press(true); });
 stage.addEventListener("pointerup", () => { held = false; press(false); });
 stage.addEventListener("pointercancel", () => { held = false; press(false); });

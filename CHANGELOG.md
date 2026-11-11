@@ -16,6 +16,7 @@ All notable changes to Anatomy are recorded here. The format follows [Keep a Cha
 
 ### Fixed
 
+- Settle in-flight animations to targets, cancel running tours, and clear pending motion timers when `prefers-reduced-motion` is enabled during interaction, and document the change listener pattern in `references/motion.md` ([#142](https://github.com/wheresryan22/anatomy/issues/142)).
 - Line-end audits follow cubic and quadratic strokes with a bounded screen-space approximation, so lines attached between curve samples are not reported as loose.
 
 - `drive.mjs` waits for the page to load (up to 10 s) before it runs the first action, and gives up with an error when Chrome leaves a request unanswered for 60 s instead of hanging, as `capture.mjs` now does.
