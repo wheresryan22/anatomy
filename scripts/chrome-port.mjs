@@ -1,4 +1,4 @@
-import { rmSync } from "node:fs";
+import { rm } from "node:fs/promises";
 
 export async function chromePort(chrome, profile) {
   try {
@@ -29,8 +29,14 @@ export async function chromePort(chrome, profile) {
       chrome.on("exit", exited);
     });
   } catch (error) {
+    // Windows may hold Chrome profile files briefly after termination.
+    // Retry cleanup so a transient EPERM does not obscure the actual startup error.
     chrome.kill("SIGKILL");
-    rmSync(profile, { recursive: true, force: true });
+    try {
+      await rm(profile, { recursive: true, force: true, maxRetries: 12, retryDelay: 150 });
+    } catch (cleanup) {
+      throw new AggregateError([error, cleanup], "Chrome startup and profile cleanup both failed");
+    }
     throw error;
   }
 }
