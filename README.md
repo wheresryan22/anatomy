@@ -1,5 +1,7 @@
 <h1 align="center">Anatomy</h1>
 
+<p align="center">English · <a href="README.tr.md">Türkçe</a></p>
+
 <p align="center"><b>A Claude skill that explains an idea by building it as a real, working object.</b><br>Also runs in Antigravity, OpenCode, Codex and MiniMax Code.<br>Crafted, interactive isometric figures with many small precise parts, in SVG, WebGL and 3D.</p>
 
 <p align="center">
